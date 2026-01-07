@@ -30,3 +30,35 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# 의존성 (Dependencies)
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# 로그 (Logs)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 환경 변수 (Environment Variables - 보안상 매우 중요!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 운영체제/IDE 관련 (OS / IDE)
+.DS_Store
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 빌드 결과물
+build/
