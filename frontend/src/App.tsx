@@ -1,20 +1,25 @@
-import { useState } from 'react';
-import RegisterPage from './pages/register';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
 import GussPage from './pages/guss';
+import LoginPage from './pages/Login';
+import RegisterPage from './pages/register';
 import AdminPage from './pages/admin';
 
 export default function App() {
-  // 여기에 'guss', 'register', 'admin' 중 보고 싶은 페이지 이름을 넣으세요.
-  const [page] = useState('guss'); 
-
   return (
-    <div className="relative">
-      {/* 버튼이 있던 자리가 삭제되었습니다. */}
-
-      {/* 페이지 표시 */}
-      {page === 'register' && <RegisterPage />}
-      {page === 'guss' && <GussPage />}
-      {page === 'admin' && <AdminPage />}
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* 1. 서비스 탐색 (비로그인 가능) */}
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/guss" element={<GussPage />} />
+        
+        {/* 2. 인증 프로세스 */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        
+        {/* 3. 관리자 전용 */}
+        <Route path="/admin" element={<AdminPage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

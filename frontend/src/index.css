@@ -1,23 +1,17 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+@import "tailwindcss";
 
-/* 모든 브라우저 기본 여백과 스크롤 중복 방지 */
-html, body {
+
+html, body, #root {
   margin: 0;
   padding: 0;
   width: 100%;
   min-height: 100vh;
-}
-
-#root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
-}
-
-body {
   background-color: black;
   color: white;
+  font-family: 'Inter', sans-serif;
+}
+
+.font-orbitron {
+  font-family: 'Orbitron', sans-serif;
 }
