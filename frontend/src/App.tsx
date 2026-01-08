@@ -1,35 +1,20 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import RegisterPage from './pages/register';
+import GussPage from './pages/guss';
+import AdminPage from './pages/admin';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  // 여기에 'guss', 'register', 'admin' 중 보고 싶은 페이지 이름을 넣으세요.
+  const [page] = useState('guss'); 
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+    <div className="relative">
+      {/* 버튼이 있던 자리가 삭제되었습니다. */}
 
-export default App
+      {/* 페이지 표시 */}
+      {page === 'register' && <RegisterPage />}
+      {page === 'guss' && <GussPage />}
+      {page === 'admin' && <AdminPage />}
+    </div>
+  );
+}
