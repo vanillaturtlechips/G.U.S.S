@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import { User, Mail, Lock, Phone, Shield, CheckCircle, Dumbbell } from 'lucide-react';
 
 export default function RegisterPage() {
@@ -9,7 +9,7 @@ export default function RegisterPage() {
     phone: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     console.log('회원가입:', formData);
   };
@@ -34,7 +34,7 @@ export default function RegisterPage() {
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-lime-500/20 rounded-full blur-3xl animate-pulse" 
            style={{ animationDuration: '4s', animationDelay: '1s' }} />
 
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-6">
+      <div className="relative z-10 flex items-center justify-center p-6">
         <div className="w-full max-w-6xl grid lg:grid-cols-2 gap-8 items-center">
           {/* Left Side - Info Panel */}
           <div className="hidden lg:block space-y-8">

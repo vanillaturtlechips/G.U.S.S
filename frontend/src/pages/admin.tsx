@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Package, Calendar, DollarSign, Plus, Edit, Trash2, 
-  Search, Download, Eye, Shield, BarChart3, Activity, TrendingUp
+  Search, Download, Eye, Shield, Activity, TrendingUp
 } from 'lucide-react';
 
 export default function AdminPage() {
@@ -384,7 +384,9 @@ export default function AdminPage() {
                   <div className="bg-zinc-900 border border-emerald-500/30 rounded-xl p-4">
                     <p className="text-sm text-zinc-400 mb-1">평균 거래액</p>
                     <p className="text-2xl font-black text-white">
-                      {Math.round(totalRevenue / revenue.length).toLocaleString()}원
+                      {revenue.length > 0 
+                        ? Math.round(totalRevenue / revenue.length).toLocaleString() 
+                        : 0}원
                     </p>
                   </div>
                   <div className="bg-zinc-900 border border-emerald-500/30 rounded-xl p-4">

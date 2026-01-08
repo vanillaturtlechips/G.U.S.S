@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Search, Activity, TrendingUp, Clock, Users, Award, Calendar, Target, Heart, MapPin } from 'lucide-react';
 
 export default function GussPage() {
@@ -39,7 +39,7 @@ export default function GussPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white relative overflow-hidden">
+    <div className="min-h-screen bg-black text-white relative overflow-x-hidden">
       {/* Animated Background */}
       <div className="absolute inset-0 opacity-20">
         <div className="absolute inset-0" style={{
@@ -375,14 +375,19 @@ export default function GussPage() {
                     <span className="text-zinc-400">이용 시간</span>
                     <span className="text-white font-bold">{selectedDuration}시간</span>
                   </div>
-                  {selectedTime && (
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">종료 시간</span>
-                      <span className="text-emerald-400 font-bold">
-                        {String(parseInt(selectedTime.split(':')[0]) + selectedDuration).padStart(2, '0')}:00
-                      </span>
-                    </div>
-                  )}
+                  {selectedTime && (() => {
+                    const startHour = parseInt(selectedTime.split(':')[0]);
+                    const endHour = (startHour + selectedDuration) % 24;
+                    return (
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">종료 시간</span>
+                        <span className="text-emerald-400 font-bold">
+                          {String(endHour).padStart(2, '0')}:00
+                          {startHour + selectedDuration >= 24 && ' (익일)'}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
