@@ -1,35 +1,80 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import RegisterPage from './pages/register';
+import GussPage from './pages/guss';
+import AdminPage from './pages/admin';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [page, setPage] = useState('guss');
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
+    <div className="relative">
+      {/* 네비게이션 - 우측 상단 (작고 투명하게) */}
+      <div style={{ 
+        position: 'fixed', 
+        top: 20, 
+        right: 20, 
+        zIndex: 9999,
+        display: 'flex',
+        gap: '8px',
+        background: 'rgba(0, 0, 0, 0.5)',
+        padding: '8px',
+        borderRadius: '12px',
+        backdropFilter: 'blur(10px)'
+      }}>
+        <button 
+          onClick={() => setPage('register')}
+          style={{ 
+            padding: '8px 16px', 
+            background: page === 'register' ? '#10b981' : 'transparent', 
+            color: '#fff', 
+            border: '1px solid #10b981', 
+            borderRadius: '8px', 
+            cursor: 'pointer', 
+            fontWeight: 'bold',
+            fontSize: '12px',
+            transition: 'all 0.3s'
+          }}
+        >
+          회원가입
         </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
+        <button 
+          onClick={() => setPage('guss')}
+          style={{ 
+            padding: '8px 16px', 
+            background: page === 'guss' ? '#10b981' : 'transparent', 
+            color: '#fff', 
+            border: '1px solid #10b981', 
+            borderRadius: '8px', 
+            cursor: 'pointer', 
+            fontWeight: 'bold',
+            fontSize: '12px',
+            transition: 'all 0.3s'
+          }}
+        >
+          상세정보
+        </button>
+        <button 
+          onClick={() => setPage('admin')}
+          style={{ 
+            padding: '8px 16px', 
+            background: page === 'admin' ? '#10b981' : 'transparent', 
+            color: '#fff', 
+            border: '1px solid #10b981', 
+            borderRadius: '8px', 
+            cursor: 'pointer', 
+            fontWeight: 'bold',
+            fontSize: '12px',
+            transition: 'all 0.3s'
+          }}
+        >
+          관리자
+        </button>
       </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
 
-export default App
+      {/* 페이지 표시 */}
+      {page === 'register' && <RegisterPage />}
+      {page === 'guss' && <GussPage />}
+      {page === 'admin' && <AdminPage />}
+    </div>
+  );
+}
