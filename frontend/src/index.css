@@ -1,22 +1,16 @@
-/* 1. Tailwind v4 전용 임포트 (반드시 최상단에 위치해야 합니다) */
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
 
-/* 2. 커스텀 기본 스타일 */
-html, body {
+html, body, #root {
   margin: 0;
   padding: 0;
   width: 100%;
   min-height: 100vh;
-}
-
-#root {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
-}
-
-body {
   background-color: black;
   color: white;
+  font-family: 'Inter', sans-serif;
+}
+
+.font-orbitron {
+  font-family: 'Orbitron', sans-serif;
 }
