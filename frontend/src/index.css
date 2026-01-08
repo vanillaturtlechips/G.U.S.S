@@ -1,10 +1,7 @@
-<<<<<<< HEAD
-=======
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* 1. Tailwind v4 전용 임포트 (반드시 최상단에 위치해야 합니다) */
+@import "tailwindcss";
 
-/* 모든 브라우저 기본 여백과 스크롤 중복 방지 */
+/* 2. 커스텀 기본 스타일 */
 html, body {
   margin: 0;
   padding: 0;
@@ -23,4 +20,3 @@ body {
   background-color: black;
   color: white;
 }
->>>>>>> origin/main
