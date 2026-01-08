@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Dashboard from './pages/dashboard';
+import Dashboard from './pages/Dashboard';
 import GussPage from './pages/guss';
-import LoginPage from './pages/login';
+import LoginPage from './pages/Login';
 import RegisterPage from './pages/register';
 import AdminPage from './pages/admin';
 
