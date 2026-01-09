@@ -55,7 +55,7 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Registration success"})
 }
 
-// HandleLogin: 로그인
+// HandleLogin: 로그인 (유저명 반환 추가)
 func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID  string `json:"user_id"`
@@ -77,7 +77,13 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateToken(user.UserNumber, user.UserID, "USER")
+	// [권한 분기] 특정 아이디(예: admin)만 ADMIN 권한 부여, 그 외엔 USER
+	role := "USER"
+	if user.UserID == "admin" {
+		role = "ADMIN"
+	}
+
+	token, err := auth.GenerateToken(user.UserNumber, user.UserID, role)
 	if err != nil {
 		http.Error(w, "토큰 생성 실패", http.StatusInternalServerError)
 		return
@@ -86,7 +92,12 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	_ = s.LogRepo.SaveUserLog(user.UserID, "LOGIN_SUCCESS")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	// 프론트 모달을 위해 user_name과 role을 함께 전달합니다.
+	json.NewEncoder(w).Encode(map[string]string{
+		"token":     token,
+		"user_name": user.UserName,
+		"role":      role,
+	})
 }
 
 // HandleGetGyms: 전체 목록
@@ -100,7 +111,7 @@ func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(gyms)
 }
 
-// HandleGetGymDetail: 상세 정보 (패닉 해결 버전)
+// HandleGetGymDetail: 상세 정보
 func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 	idStr := strings.TrimPrefix(r.URL.Path, "/api/gyms/")
 	idStr = strings.TrimSuffix(idStr, "/")
@@ -111,14 +122,12 @@ func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// [수정 포인트 1] DB에서 gym 데이터를 먼저 가져와야 합니다!
 	gym, err := s.Repo.GetGymDetail(id)
 	if err != nil || gym == nil {
 		http.Error(w, "지점 정보를 찾을 수 없습니다.", http.StatusNotFound)
 		return
 	}
 
-	// [수정 포인트 2] Algo가 nil일 경우를 대비한 방어 코드
 	if s.Algo == nil {
 		http.Error(w, "서버 설정 오류 (Algo is nil)", http.StatusInternalServerError)
 		return
@@ -133,7 +142,7 @@ func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleReserve: 예약 (JWT 인증 연동)
+// HandleReserve: 예약 (상태값 반환 추가)
 func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	userNum, ok := r.Context().Value(UserContextKey).(int64)
 	if !ok {
@@ -149,7 +158,9 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Repo.CreateReservation(userNum, req.GymID); err != nil {
+	// s.Repo.CreateReservation은 이제 (string, error)를 리턴합니다.
+	status, err := s.Repo.CreateReservation(userNum, req.GymID)
+	if err != nil {
 		http.Error(w, "예약 실패", http.StatusInternalServerError)
 		return
 	}
@@ -157,5 +168,9 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	_ = s.LogRepo.SaveUserLog(strconv.FormatInt(userNum, 10), "RESERVE_CREATED")
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"message": "Reservation completed"})
+	// 응답에 status(CONFIRMED/WAITING/DUPLICATE)를 포함합니다.
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Reservation process completed",
+		"status":  status,
+	})
 }

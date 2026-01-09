@@ -1,41 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, LogIn, LogOut, Activity, Shield } from 'lucide-react';
-import seoulMapImg from '../assets/seoul-map.png'; // 서울 지도 이미지 경로
-import api from '../api/axios'; // 우리가 만든 axios 설정 파일
+import { Search, MapPin, LogIn, LogOut, Activity, Shield, Phone } from 'lucide-react';
+import seoulMapImg from '../assets/seoul-map.png'; 
+import api from '../api/axios'; 
 
-/** * [데이터 매핑] DB의 guss_number를 지도상의 좌표와 연결합니다. 
- * 마커가 바다에 빠지지 않도록 육지 안쪽 좌표로 고정했습니다.
- */
 const POSITIONS: { [key: number]: { top: string; left: string } } = {
-  1: { top: '78%', left: '68%' }, // 강남
-  2: { top: '32%', left: '28%' }, // 홍대
-  3: { top: '35%', left: '72%' }, // 성수
-  4: { top: '62%', left: '44%' }, // 여의도
-  5: { top: '72%', left: '85%' }, // 잠실
+  1: { top: '78%', left: '68%' }, 
+  2: { top: '32%', left: '28%' }, 
+  3: { top: '35%', left: '72%' }, 
+  4: { top: '62%', left: '44%' }, 
+  5: { top: '72%', left: '85%' }, 
 };
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   
-  // 상태 관리
   const [gyms, setGyms] = useState<any[]>([]);
   const [selectedGym, setSelectedGym] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // 로그인 상태 확인 (localStorage 활용)
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
 
-  /** * [실시간 데이터 패칭] 
-   * 백엔드 API에서 체육관 목록을 가져와 상태를 업데이트합니다.
-   */
   const fetchGyms = async () => {
     try {
       const response = await api.get('/api/gyms');
       const data = response.data;
       setGyms(data);
       
-      // 처음 로딩 시 첫 번째 체육관을 기본 선택
       if (data.length > 0 && !selectedGym) {
         setSelectedGym(data[0]);
       }
@@ -48,17 +39,15 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchGyms();
-    // 5초마다 데이터를 갱신하여 인원수 변화를 실시간으로 반영합니다.
     const interval = setInterval(fetchGyms, 5000); 
     return () => clearInterval(interval);
   }, [selectedGym]);
 
-  // 로그인/로그아웃 처리
   const handleAuthAction = () => {
     if (isLoggedIn) {
       localStorage.removeItem('token');
       localStorage.removeItem('isLoggedIn');
-      window.location.reload(); // 상태 반영을 위한 새로고침
+      window.location.reload(); 
     } else {
       navigate('/login');
     }
@@ -110,10 +99,9 @@ const Dashboard: React.FC = () => {
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 overflow-hidden mb-4">
           {/* 지도 섹션 [디자인 유지] */}
           <div className="lg:col-span-2 bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-4 relative overflow-hidden">
-            <div className="w-full h-full bg-zinc-900 rounded-xl flex items-center justify-center overflow-hidden border border-zinc-800 relative">
+            <div className="w-full h-full bg-zinc-900 rounded-xl flex items-center justify-center overflow-hidden border border-zinc-800 relative shadow-inner">
               <img src={seoulMapImg} alt="서울 지도" className="w-full h-full object-cover opacity-30 grayscale brightness-75" />
               
-              {/* 실시간 마커 렌더링 */}
               {gyms.map((gym) => (
                 <button
                   key={gym.guss_number}
@@ -137,11 +125,11 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
           
-          {/* 정보 패널 (INFO_PANEL) [데이터 연동] */}
-          <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-8 flex flex-col justify-between">
+          {/* 정보 패널 (INFO_PANEL) */}
+          <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-8 flex flex-col justify-between shadow-[0_0_50px_rgba(0,0,0,0.5)]">
             {selectedGym ? (
               <div className="animate-in fade-in duration-500">
-                <h2 className="text-2xl font-bold text-emerald-400 mb-8 flex items-center gap-3" style={{ fontFamily: 'Orbitron' }}>
+                <h2 className="text-2xl font-bold text-emerald-400 mb-8 flex items-center gap-3 uppercase italic" style={{ fontFamily: 'Orbitron' }}>
                   <Shield className="w-6 h-6" /> INFO_PANEL
                 </h2>
                 
@@ -149,12 +137,17 @@ const Dashboard: React.FC = () => {
                   <div className="border-l-4 border-emerald-500 pl-4">
                     <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-1">Center Name</p>
                     <p className="text-2xl font-black">{selectedGym.guss_name}</p>
+                    {/* 전화번호 추가 */}
+                    <div className="flex items-center gap-2 mt-1 text-zinc-400">
+                      <Phone className="w-3 h-3 text-emerald-500" />
+                      <p className="text-sm font-medium tracking-tighter">{selectedGym.guss_phone || '전화번호 미등록'}</p>
+                    </div>
                   </div>
                   
                   <div className="border-l-4 border-zinc-800 pl-4">
                     <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-1">Live Status</p>
-                    <p className="text-emerald-400 font-bold flex items-center gap-2">
-                      <Activity className="w-4 h-4 animate-pulse" /> {selectedGym.guss_status?.toUpperCase()}
+                    <p className="text-emerald-400 font-bold flex items-center gap-2 uppercase italic">
+                      <Activity className="w-4 h-4 animate-pulse" /> {selectedGym.guss_status}
                     </p>
                     <p className="text-zinc-400 mt-2">
                       현재 이용 인원: <span className="text-white font-black">{selectedGym.guss_user_count}</span> 명 / {selectedGym.guss_size}
@@ -165,13 +158,14 @@ const Dashboard: React.FC = () => {
             ) : (
               <div className="flex flex-col items-center justify-center h-full opacity-30">
                 <Shield className="w-12 h-12 mb-4" />
-                <p>지점을 선택해주세요.</p>
+                <p className="font-bold tracking-widest">지점을 선택해주세요.</p>
               </div>
             )}
 
+            {/* 예약하기 버튼 삭제 및 상세 보기 버튼 하단 고정 */}
             <button 
               onClick={handleDetailView}
-              className="w-full py-4 bg-zinc-900 border border-emerald-500/30 rounded-xl text-white font-bold hover:bg-emerald-500/10 hover:border-emerald-500 transition-all"
+              className="w-full py-5 bg-zinc-900 border border-emerald-500/30 rounded-2xl text-white font-bold hover:bg-emerald-500/10 hover:border-emerald-500 transition-all shadow-lg active:scale-[0.98]"
             >
               상세 데이터 확인하기
             </button>

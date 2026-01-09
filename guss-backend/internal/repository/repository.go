@@ -74,7 +74,7 @@
 // 	g := &domain.Gym{}
 // 	query := `SELECT guss_number, guss_name, guss_address, guss_phone, guss_status, guss_user_count, guss_size FROM guss_table WHERE guss_number = ?`
 // 	err := r.db.QueryRow(query, gussNumber).Scan(
-// 		&g.GussNumber, &g.GussName, &g.GussAddress, &g.GussPhone, 
+// 		&g.GussNumber, &g.GussName, &g.GussAddress, &g.GussPhone,
 // 		&g.GussStatus, &g.GussUserCount, &g.GussSize,
 // 	)
 // 	if err != nil {
@@ -83,18 +83,17 @@
 // 	return g, nil
 // }
 
-
 package repository
 
 import "guss-backend/internal/domain"
 
-// Repository: 규칙만 정의합니다.
 type Repository interface {
 	CreateUser(u *domain.User) error
 	GetUserByID(id string) (*domain.User, error)
 	GetAllGyms() ([]domain.Gym, error)
 	GetGymDetail(id int64) (*domain.Gym, error)
-	CreateReservation(userNum, gymNum int64) error
+	// 반환 타입을 (string, error)로 반드시 수정!
+	CreateReservation(userNum, gymNum int64) (string, error)
 }
 
 // LogRepository: 로그용 규칙

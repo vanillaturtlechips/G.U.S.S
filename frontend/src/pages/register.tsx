@@ -1,7 +1,7 @@
-// src/pages/Register.tsx (예시)
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import StatusModal from './StatusModal';
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
@@ -11,16 +11,25 @@ const Register: React.FC = () => {
     user_id: '',
     user_pw: ''
   });
+  const [statusModal, setStatusModal] = useState({ isOpen: false, type: 'SUCCESS' as any, title: '', message: '' });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 백엔드의 HandleRegister 호출
       await api.post('/api/register', formData);
-      alert('회원가입 성공! 로그인 페이지로 이동합니다.');
-      navigate('/login');
+      setStatusModal({
+        isOpen: true,
+        type: 'SUCCESS',
+        title: 'JOIN SUCCESS',
+        message: '성공적으로 등록되었습니다.\n로그인 페이지로 이동합니다.'
+      });
     } catch (error: any) {
-      alert(error.response?.data || '회원가입 실패');
+      setStatusModal({
+        isOpen: true,
+        type: 'ERROR',
+        title: 'FAILED',
+        message: error.response?.data || '가입 정보 중복 또는 서버 오류입니다.'
+      });
     }
   };
 
@@ -58,6 +67,18 @@ const Register: React.FC = () => {
           회원가입 하기
         </button>
       </form>
+
+      <StatusModal 
+        isOpen={statusModal.isOpen}
+        type={statusModal.type}
+        title={statusModal.title}
+        message={statusModal.message}
+        onClose={() => setStatusModal({ ...statusModal, isOpen: false })}
+        onConfirm={() => {
+          if (statusModal.type === 'SUCCESS') navigate('/login');
+          else setStatusModal({ ...statusModal, isOpen: false });
+        }}
+      />
     </div>
   );
 };

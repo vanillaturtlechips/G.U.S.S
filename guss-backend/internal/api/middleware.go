@@ -8,9 +8,10 @@ import (
 	"guss-backend/internal/auth"
 )
 
-// handlers.go와 약속한 키 이름
+// handlers.go와 공유하는 컨텍스트 키
 const UserContextKey = "user_number"
 
+// AuthMiddleware: JWT 토큰 유효성 검사 및 사용자 정보 추출
 func (s *Server) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -21,27 +22,25 @@ func (s *Server) AuthMiddleware(next http.Handler) http.Handler {
 
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// 1. JWT 토큰 검증 (반환 타입: *auth.Claims)
+		// JWT 토큰 검증 및 Claims 추출
 		claims, err := auth.ValidateToken(token)
 		if err != nil {
 			http.Error(w, "유효하지 않은 토큰입니다.", http.StatusUnauthorized)
 			return
 		}
 
-		// 2. [수정 포인트] 구조체이므로 claims.UserNumber로 바로 접근합니다.
-		// 이미 int64 타입일 것이므로 복잡한 변환도 필요 없습니다.
-		userNum := claims.UserNumber
+		// 컨텍스트에 사용자 번호와 전체 Claims 저장
+		ctx := context.WithValue(r.Context(), UserContextKey, claims.UserNumber)
+		ctx = context.WithValue(ctx, "full_claims", claims)
 
-		// 3. 컨텍스트 주입
-		ctx := context.WithValue(r.Context(), UserContextKey, userNum)
-		ctx = context.WithValue(ctx, "full_claims", claims) // 구조체 포인터 그대로 저장
-		
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+// AdminMiddleware: ADMIN 역할(Role) 소유 여부 검사
 func (s *Server) AdminMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 컨텍스트에서 Claims를 꺼내 Role 확인
 		userInfo, ok := r.Context().Value("full_claims").(*auth.Claims)
 		if !ok || userInfo.Role != "ADMIN" {
 			http.Error(w, "관리자 권한이 없습니다.", http.StatusForbidden)
