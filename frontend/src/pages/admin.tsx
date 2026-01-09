@@ -1,15 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Package, Calendar, DollarSign, Plus, Edit, Trash2, 
   Search, Download, Eye, Shield, Activity, TrendingUp
 } from 'lucide-react';
 
 export default function AdminPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'equipment' | 'reservation' | 'revenue'>('equipment');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEquipment, setNewEquipment] = useState({ name: '', category: '', quantity: '' });
 
-  // 1. 오빠가 준 목업 데이터 그대로 유지 (기구, 예약, 매출)
+  // [추가] 어드민 권한 체크 로직 (디자인 영향 없음)
+  useEffect(() => {
+    const role = localStorage.getItem('userRole');
+    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+
+    if (!isLoggedIn || role !== 'ADMIN') {
+      alert('관리자 전용 구역입니다. 접근 권한이 없습니다.');
+      navigate('/');
+    }
+  }, [navigate]);
+
   const equipment = [
     { id: 1, name: '트레드밀', category: '유산소', quantity: 10, status: 'active', purchaseDate: '2023-01-15' },
     { id: 2, name: '벤치프레스', category: '웨이트', quantity: 6, status: 'active', purchaseDate: '2023-02-20' },
@@ -48,19 +60,14 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex">
-      {/* 2. 애니메이션 그리드 배경 */}
+    <div className="min-h-screen bg-black text-white flex font-sans">
       <div className="fixed inset-0 opacity-20 pointer-events-none">
         <div className="absolute inset-0" style={{
-          backgroundImage: `
-            linear-gradient(to right, #10b981 1px, transparent 1px),
-            linear-gradient(to bottom, #10b981 1px, transparent 1px)
-          `,
+          backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`,
           backgroundSize: '40px 40px'
         }} />
       </div>
 
-      {/* 3. 왼쪽 사이드바 (수직 메뉴) */}
       <div className="w-80 bg-zinc-950 border-r-2 border-emerald-500/30 p-6 relative z-10 flex flex-col h-screen sticky top-0">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
@@ -79,27 +86,11 @@ export default function AdminPage() {
         </div>
 
         <nav className="flex-1 space-y-3">
-          <MenuButton 
-            active={activeTab === 'equipment'} 
-            onClick={() => setActiveTab('equipment')} 
-            icon={<Package className="w-6 h-6" />} 
-            label="기구 등록" 
-          />
-          <MenuButton 
-            active={activeTab === 'reservation'} 
-            onClick={() => setActiveTab('reservation')} 
-            icon={<Calendar className="w-6 h-6" />} 
-            label="예약 현황 (로그)" 
-          />
-          <MenuButton 
-            active={activeTab === 'revenue'} 
-            onClick={() => setActiveTab('revenue')} 
-            icon={<DollarSign className="w-6 h-6" />} 
-            label="매출 (로그)" 
-          />
+          <MenuButton active={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} icon={<Package className="w-6 h-6" />} label="기구 등록" />
+          <MenuButton active={activeTab === 'reservation'} onClick={() => setActiveTab('reservation')} icon={<Calendar className="w-6 h-6" />} label="예약 현황 (로그)" />
+          <MenuButton active={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')} icon={<DollarSign className="w-6 h-6" />} label="매출 (로그)" />
         </nav>
 
-        {/* 시스템 상태 표시기 */}
         <div className="mt-auto bg-zinc-900 border border-emerald-500/30 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
@@ -113,10 +104,8 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* 4. 메인 콘텐츠 영역 */}
       <div className="flex-1 relative z-10 overflow-y-auto">
         <div className="p-8">
-          {/* 상단 통계 카드 */}
           <div className="grid grid-cols-3 gap-6 mb-8">
             <StatCard icon={<Package className="w-8 h-8 text-emerald-400" />} label="총 기구" value={`${totalEquipment}대`} />
             <StatCard icon={<Calendar className="w-8 h-8 text-emerald-400" />} label="오늘 예약" value={`${reservations.length}건`} />
@@ -125,12 +114,11 @@ export default function AdminPage() {
 
           <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl overflow-hidden shadow-2xl">
             <div className="h-1 bg-gradient-to-r from-emerald-500 to-lime-500" />
-
             {activeTab === 'equipment' && (
               <div className="p-8">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-3xl font-black text-white">기구 관리</h2>
-                  <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-bold transition-all shadow-lg shadow-emerald-500/50 hover:scale-105">
+                  <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-bold hover:scale-105 transition-all shadow-lg shadow-emerald-500/50">
                     <Plus className="w-5 h-5" /> 기구 추가
                   </button>
                 </div>
@@ -139,29 +127,18 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
-
             {activeTab === 'reservation' && <ReservationTable data={reservations} />}
             {activeTab === 'revenue' && <RevenueTable data={revenue} total={totalRevenue} />}
           </div>
         </div>
       </div>
 
-      {/* 5. 모달 (디자인 오빠 취향대로!) */}
-      {showAddModal && <AddModal 
-        newEquipment={newEquipment} 
-        setNewEquipment={setNewEquipment} 
-        onClose={() => setShowAddModal(false)} 
-        onConfirm={handleAddEquipment} 
-      />}
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-      `}</style>
+      {showAddModal && <AddModal newEquipment={newEquipment} setNewEquipment={setNewEquipment} onClose={() => setShowAddModal(false)} onConfirm={handleAddEquipment} />}
+      
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');`}</style>
     </div>
   );
 }
-
-// --- 서브 컴포넌트들 (오빠 코드 깔끔하게 정리!) ---
 
 const MenuButton = ({ active, onClick, icon, label }: any) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-5 py-4 rounded-xl font-bold transition-all ${active ? 'bg-gradient-to-r from-emerald-500 to-lime-500 text-black shadow-lg shadow-emerald-500/50' : 'bg-zinc-900 text-emerald-400 hover:bg-zinc-800 border border-emerald-500/20'}`}>
@@ -183,17 +160,13 @@ const EquipmentItem = ({ item }: any) => (
   <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-2xl p-6 hover:border-emerald-500/40 transition-all">
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-4">
-        <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center text-black font-bold">
-          <Package size={32} />
-        </div>
+        <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center text-black font-bold"><Package size={32} /></div>
         <div>
           <h3 className="text-xl font-bold text-white mb-1">{item.name}</h3>
           <div className="flex items-center gap-3">
             <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-sm font-bold rounded-lg border border-emerald-500/30">{item.category}</span>
             <span className="text-white font-semibold">{item.quantity}대</span>
-            <span className={`px-3 py-1 text-sm font-bold rounded-lg border ${item.status === 'active' ? 'bg-lime-500/20 text-lime-400 border-lime-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}`}>
-              {item.status === 'active' ? '정상' : '점검중'}
-            </span>
+            <span className={`px-3 py-1 text-sm font-bold rounded-lg border ${item.status === 'active' ? 'bg-lime-500/20 text-lime-400 border-lime-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}`}>{item.status === 'active' ? '정상' : '점검중'}</span>
           </div>
         </div>
       </div>
@@ -222,9 +195,7 @@ const ReservationTable = ({ data }: any) => (
             <td className="py-4 px-4 text-zinc-400 font-mono text-sm">{item.phone}</td>
             <td className="py-4 px-4 text-white font-semibold">{item.time}</td>
             <td className="py-4 px-4">
-              <span className={`px-3 py-1 rounded-lg text-sm font-bold border ${item.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
-                {item.status === 'confirmed' ? '확정' : '취소'}
-              </span>
+              <span className={`px-3 py-1 rounded-lg text-sm font-bold border ${item.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>{item.status === 'confirmed' ? '확정' : '취소'}</span>
             </td>
           </tr>
         ))}
@@ -265,10 +236,12 @@ const AddModal = ({ newEquipment, setNewEquipment, onClose, onConfirm }: any) =>
   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
     <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl p-8 max-w-md w-full shadow-[0_0_50px_rgba(16,185,129,0.2)]">
       <div className="h-1 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-t-3xl mb-6" />
-      <h3 className="text-2xl font-black text-white mb-6 text-center uppercase tracking-widest">Add New Equipment</h3>
+      <h3 className="text-2xl font-black text-white mb-6 text-center uppercase tracking-widest" style={{ fontFamily: 'Orbitron' }}>Add New Equipment</h3>
       <div className="space-y-4">
         <Input label="기구 이름" value={newEquipment.name} onChange={(v:any) => setNewEquipment({...newEquipment, name: v})} placeholder="예: 트레드밀" />
-        <div className="flex gap-4">
+        <Input label="카테고리" value={newEquipment.category} onChange={(v:any) => setNewEquipment({...newEquipment, category: v})} placeholder="예: 유산소" />
+        <Input label="수량" value={newEquipment.quantity} onChange={(v:any) => setNewEquipment({...newEquipment, quantity: v})} placeholder="예: 10" />
+        <div className="flex gap-4 mt-6">
           <button onClick={onClose} className="flex-1 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-bold">취소</button>
           <button onClick={onConfirm} className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-black shadow-lg shadow-emerald-500/30">등록하기</button>
         </div>
