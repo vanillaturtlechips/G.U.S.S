@@ -106,6 +106,12 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle("/reserve", server.AuthMiddleware(http.HandlerFunc(server.HandleReserve)))
+	
+	adminHandler := http.HandlerFunc(server.HandleDashboard)
+	mux.Handle("/admin/dashboard", server.AuthMiddleware(server.AdminMiddleware(adminHandler)))
+	mux.Handle("/admin/sales", server.AuthMiddleware(server.AdminMiddleware(http.HandlerFunc(server.HandleGetSales))))
+	
 	registerRoutes(mux, server)
 
 	srv := &http.Server{
