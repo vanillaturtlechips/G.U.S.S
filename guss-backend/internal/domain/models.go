@@ -8,7 +8,7 @@ type User struct {
 	UserName   string `json:"user_name"   db:"user_name"`
 	UserPhone  string `json:"user_phone"  db:"user_phone"`
 	UserID     string `json:"user_id"     db:"user_id"`
-	UserPW     string `json:"-"           db:"user_pw"` // password -> user_pw 수정
+	UserPW     string `json:"user_pw"     db:"user_pw"`
 }
 
 // 2. 체육관 정보 (guss_table)
@@ -42,6 +42,7 @@ type Reservation struct {
 	FKGussID   int64     `json:"fk_guss_number" db:"fk_guss_number"`
 	RevsTime   time.Time `json:"revs_time"      db:"revs_time"`
 	RevsStatus string    `json:"revs_status"    db:"revs_status"`
+	UserName   string    `json:"user_name,omitempty"`
 }
 
 // 5. 관리자 정보 (admin_table)

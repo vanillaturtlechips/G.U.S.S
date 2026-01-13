@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	// MySQL 드라이버 로드
 	_ "github.com/go-sql-driver/mysql"
 
 	"guss-backend/internal/algo"
@@ -23,7 +22,6 @@ import (
 	"guss-backend/pkg/tcp"
 )
 
-// corsMiddleware: 브라우저의 CORS 차단 방지
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
@@ -42,7 +40,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// mockResponseWriter: TCP 연결을 통해 HTTP 응답을 전송하기 위한 래퍼
 type mockResponseWriter struct {
 	conn        net.Conn
 	header      http.Header
@@ -71,7 +68,6 @@ func (m *mockResponseWriter) WriteHeader(code int) {
 }
 
 func main() {
-	// 1. 실행 옵션 설정 (기본 포트 9000)
 	port := flag.String("port", "9000", "API 서버 포트")
 	useMock := flag.Bool("mock", false, "Mock 데이터 사용 여부")
 	mysqlDSN := flag.String("dsn", "guss_user:1234@tcp(127.0.0.1:3306)/guss", "MySQL 연결 정보")
@@ -81,7 +77,6 @@ func main() {
 	var repo repository.Repository
 	var logRepo repository.LogRepository
 
-	// 2. 리포지토리 초기화
 	if *useMock {
 		log.Println("--- [NOTICE] Mock 테스트 모드로 실행 중입니다 ---")
 		repo = repository.NewMockRepository()
@@ -104,7 +99,6 @@ func main() {
 		logRepo = repository.NewMockLogRepository()
 	}
 
-	// 3. 서버 인스턴스 생성
 	server := &api.Server{
 		Repo:    repo,
 		LogRepo: logRepo,
@@ -120,7 +114,6 @@ func main() {
 		WriteTimeout: 15 * time.Second,
 	}
 
-	// 4. Graceful Shutdown 처리
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -131,7 +124,6 @@ func main() {
 		srv.Shutdown(shutdownCtx)
 	}()
 
-	// 5. TCP 서버 및 HTTP 핸들러 연결
 	limiter := tcp.NewConnLimiter(*maxConn)
 	ln, err := net.Listen("tcp", ":"+*port)
 	if err != nil {
@@ -168,32 +160,43 @@ func main() {
 	}
 }
 
-// registerRoutes: 모든 API 경로를 핸들러와 연결 (404 방지)
 func registerRoutes(mux *http.ServeMux, s *api.Server) {
-	// [기존 사용자 경로]
 	mux.HandleFunc("/api/register", s.HandleRegister)
 	mux.HandleFunc("/api/login", s.HandleLogin)
 	mux.HandleFunc("/api/gyms", s.HandleGetGyms)
 	mux.HandleFunc("/api/gyms/", s.HandleGetGymDetail)
 	mux.Handle("/api/reserve", s.AuthMiddleware(http.HandlerFunc(s.HandleReserve)))
 
-	// [관리자 대시보드 경로 - admin.tsx 연동용]
 	mux.HandleFunc("/api/dashboard", s.HandleDashboard)
 
-	// [기구 관리 - 조회(GET) 및 등록(POST)]
+	// 기구 관련 라우트 통합 처리
 	mux.HandleFunc("/api/equipments", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			s.HandleAddEquipment(w, r)
-		} else {
+		switch r.Method {
+		case http.MethodGet:
 			s.HandleGetEquipments(w, r)
+		case http.MethodPost:
+			s.HandleAddEquipment(w, r)
+		case http.MethodPut:
+			s.HandleUpdateEquipment(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
 
-	// [기구 삭제 - /api/equipments/{id}]
-	// 실제 구현 시 URL 파라미터 추출 로직이 필요할 수 있습니다.
-	mux.HandleFunc("/api/equipments/", s.HandleDeleteEquipment)
+	// /api/equipments/{id} 형태의 경로 처리 (삭제 및 수정용)
+	mux.HandleFunc("/api/equipments/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			s.HandleDeleteEquipment(w, r)
+		case http.MethodPut:
+			s.HandleUpdateEquipment(w, r)
+		case http.MethodOptions:
+			return // CORS 대응
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
 
-	// [로그 조회 경로]
 	mux.HandleFunc("/api/reservations", s.HandleGetReservations)
 	mux.HandleFunc("/api/sales", s.HandleGetSales)
 }

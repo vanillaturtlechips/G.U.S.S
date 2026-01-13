@@ -3,7 +3,6 @@ package repository
 import (
 	"database/sql"
 	"guss-backend/internal/domain"
-	"log"
 )
 
 type mysqlRepo struct {
@@ -14,15 +13,13 @@ func NewMySQLRepository(db *sql.DB) Repository {
 	return &mysqlRepo{db: db}
 }
 
-// 1. 모든 체육관 조회 (guss_table 참조 및 컴파일 에러 필드 제거)
+// 1. 모든 체육관 조회 (guss_table)
 func (r *mysqlRepo) GetGyms() ([]domain.Gym, error) {
-	// GussMaxSize를 쿼리 및 스캔에서 제외하여 컴파일 에러 해결
 	query := `SELECT guss_number, guss_name, guss_status, 
-		       COALESCE(guss_address, ''), COALESCE(guss_phone, ''), 
-		       guss_user_count, guss_size FROM guss_table`
+               COALESCE(guss_address, ''), COALESCE(guss_phone, ''), 
+               guss_user_count, guss_size FROM guss_table`
 	rows, err := r.db.Query(query)
 	if err != nil {
-		log.Printf("[DB ERROR] GetGyms: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -30,60 +27,104 @@ func (r *mysqlRepo) GetGyms() ([]domain.Gym, error) {
 	var gyms []domain.Gym
 	for rows.Next() {
 		var g domain.Gym
-		// domain.Gym에 없는 GussMaxSize 필드 스캔 제거
-		if err := rows.Scan(&g.GussNumber, &g.GussName, &g.GussStatus,
-			&g.GussAddress, &g.GussPhone, &g.GussUserCount, &g.GussSize); err != nil {
-			log.Printf("[SCAN ERROR] GetGyms: %v", err)
-			return nil, err
+		err := rows.Scan(&g.GussNumber, &g.GussName, &g.GussStatus,
+			&g.GussAddress, &g.GussPhone, &g.GussUserCount, &g.GussSize)
+		if err != nil {
+			continue
 		}
 		gyms = append(gyms, g)
 	}
 	return gyms, nil
 }
 
-// 2. 상세 조회 (guss_table 참조)
+// 2. 체육관 상세 조회
 func (r *mysqlRepo) GetGymDetail(id int64) (*domain.Gym, error) {
 	var g domain.Gym
 	query := `SELECT guss_number, guss_name, guss_status, 
-	                 COALESCE(guss_address, ''), COALESCE(guss_phone, ''), 
-	                 guss_user_count, guss_size 
-	          FROM guss_table WHERE guss_number = ?`
+                     COALESCE(guss_address, ''), COALESCE(guss_phone, ''), 
+                     guss_user_count, guss_size 
+              FROM guss_table WHERE guss_number = ?`
 	err := r.db.QueryRow(query, id).Scan(&g.GussNumber, &g.GussName, &g.GussStatus,
 		&g.GussAddress, &g.GussPhone, &g.GussUserCount, &g.GussSize)
-	if err != nil {
-		log.Printf("[DB ERROR] GetGymDetail(%d): %v", id, err)
-	}
 	return &g, err
 }
 
-// 3. 기구 추가 (equipment_table 참조)
-func (r *mysqlRepo) AddEquipment(eq *domain.Equipment) error {
-	query := `INSERT INTO equipment_table (fk_guss_number, equip_name, equip_category, equip_quantity, equip_status, purchase_date) 
-	          VALUES (?, ?, ?, ?, ?, ?)`
-	_, err := r.db.Exec(query, eq.GymID, eq.Name, eq.Category, eq.Quantity, eq.Status, eq.PurchaseDate)
+// 3. 유저 ID로 조회 (로그인용)
+func (r *mysqlRepo) GetUserByID(id string) (*domain.User, error) {
+	var u domain.User
+	query := `SELECT user_number, user_name, user_phone, user_id, user_pw FROM user_table WHERE user_id = ?`
+	err := r.db.QueryRow(query, id).Scan(&u.UserNumber, &u.UserName, &u.UserPhone, &u.UserID, &u.UserPW)
 	if err != nil {
-		log.Printf("[DB ERROR] AddEquipment: %v", err)
+		return nil, err
 	}
-	return err
+	return &u, nil
 }
 
-// 4. 기구 삭제 (equipment_table 참조)
-func (r *mysqlRepo) DeleteEquipment(id int64) error {
-	query := `DELETE FROM equipment_table WHERE equip_id = ?`
-	_, err := r.db.Exec(query, id)
+// 4. 회원가입
+func (r *mysqlRepo) CreateUser(u *domain.User) error {
+	query := `INSERT INTO user_table (user_name, user_phone, user_id, user_pw) VALUES (?, ?, ?, ?)`
+	result, err := r.db.Exec(query, u.UserName, u.UserPhone, u.UserID, u.UserPW)
 	if err != nil {
-		log.Printf("[DB ERROR] DeleteEquipment(%d): %v", id, err)
+		return err
 	}
-	return err
+	u.UserNumber, _ = result.LastInsertId()
+	return nil
 }
 
-// 5. 기구 목록 조회 (equipment_table 참조)
+// 5. 예약 생성
+func (r *mysqlRepo) CreateReservation(userNum, gymNum int64) (string, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`INSERT INTO revs_table (fk_user_number, fk_guss_number, revs_status, revs_time) 
+                      VALUES (?, ?, 'CONFIRMED', NOW())`, userNum, gymNum)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = tx.Exec(`UPDATE guss_table SET guss_user_count = guss_user_count + 1 WHERE guss_number = ?`, gymNum)
+	if err != nil {
+		return "", err
+	}
+
+	return "SUCCESS", tx.Commit()
+}
+
+// 6. 예약 목록 조회 (에러 났던 부분 수정)
+func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
+	query := `SELECT r.revs_number, r.fk_user_number, r.fk_guss_number, r.revs_status, r.revs_time, u.user_name
+	          FROM revs_table r
+	          JOIN user_table u ON r.fk_user_number = u.user_number
+	          WHERE r.fk_guss_number = ?`
+
+	rows, err := r.db.Query(query, gymID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []domain.Reservation
+	for rows.Next() {
+		var res domain.Reservation
+		// Scan 대상을 domain 필드명과 정확히 매칭 (FKUserID, FKGussID 등)
+		err := rows.Scan(&res.RevsNumber, &res.FKUserID, &res.FKGussID, &res.RevsStatus, &res.RevsTime, &res.UserName)
+		if err != nil {
+			continue
+		}
+		list = append(list, res)
+	}
+	return list, nil
+}
+
+// 7. 기구 관련 (필드명 매칭: ID, GymID, Name 등)
 func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
 	query := `SELECT equip_id, fk_guss_number, equip_name, equip_category, equip_quantity, equip_status, purchase_date 
-	          FROM equipment_table WHERE fk_guss_number = ?`
+              FROM equipment_table WHERE fk_guss_number = ?`
 	rows, err := r.db.Query(query, id)
 	if err != nil {
-		log.Printf("[DB ERROR] GetEquipments: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -97,38 +138,22 @@ func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
 	return list, nil
 }
 
-// 6. 예약 생성 (revs_table 인서트 및 guss_table 인원 업데이트)
-// Error 1452 해결을 위해 부모 테이블 명칭(guss_table)을 정확히 사용
-func (r *mysqlRepo) CreateReservation(userID, gymID int64) (string, error) {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return "", err
-	}
-	defer tx.Rollback()
-
-	// 예약 내역 저장 (revs_table)
-	queryInsert := `INSERT INTO revs_table (fk_user_number, fk_guss_number, revs_status) VALUES (?, ?, 'CONFIRMED')`
-	_, err = tx.Exec(queryInsert, userID, gymID)
-	if err != nil {
-		log.Printf("[DB ERROR] CreateReservation (Insert): %v", err)
-		return "", err
-	}
-
-	// 현재 인원(guss_user_count) 증가 (guss_table)
-	queryUpdate := `UPDATE guss_table SET guss_user_count = guss_user_count + 1 WHERE guss_number = ?`
-	_, err = tx.Exec(queryUpdate, gymID)
-	if err != nil {
-		log.Printf("[DB ERROR] CreateReservation (Update): %v", err)
-		return "", err
-	}
-
-	err = tx.Commit()
-	return "RESERVATION_SUCCESS", err
+func (r *mysqlRepo) AddEquipment(eq *domain.Equipment) error {
+	query := `INSERT INTO equipment_table (fk_guss_number, equip_name, equip_category, equip_quantity, equip_status, purchase_date) 
+              VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := r.db.Exec(query, eq.GymID, eq.Name, eq.Category, eq.Quantity, eq.Status, eq.PurchaseDate)
+	return err
 }
 
-// 나머지 인터페이스 만족용 빈 함수들
-func (r *mysqlRepo) CreateUser(u *domain.User) error                             { return nil }
-func (r *mysqlRepo) GetUserByID(id string) (*domain.User, error)                 { return nil, nil }
-func (r *mysqlRepo) GetReservationsByGym(id int64) ([]domain.Reservation, error) { return nil, nil }
-func (r *mysqlRepo) GetSalesByGym(id int64) ([]map[string]interface{}, error)    { return nil, nil }
-func (r *mysqlRepo) UpdateEquipment(eq *domain.Equipment) error                  { return nil }
+func (r *mysqlRepo) UpdateEquipment(eq *domain.Equipment) error {
+	query := `UPDATE equipment_table SET equip_name=?, equip_category=?, equip_quantity=?, equip_status=? WHERE equip_id=?`
+	_, err := r.db.Exec(query, eq.Name, eq.Category, eq.Quantity, eq.Status, eq.ID)
+	return err
+}
+
+func (r *mysqlRepo) DeleteEquipment(id int64) error {
+	_, err := r.db.Exec(`DELETE FROM equipment_table WHERE equip_id = ?`, id)
+	return err
+}
+
+func (r *mysqlRepo) GetSalesByGym(id int64) ([]map[string]interface{}, error) { return nil, nil }
