@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"errors" // 에러 처리를 위해 추가
 	"guss-backend/internal/domain"
 )
 
@@ -13,7 +14,7 @@ func NewMySQLRepository(db *sql.DB) Repository {
 	return &mysqlRepo{db: db}
 }
 
-// 1. 모든 체육관 조회 (guss_table)
+// 1. 모든 체육관 조회
 func (r *mysqlRepo) GetGyms() ([]domain.Gym, error) {
 	query := `SELECT guss_number, guss_name, guss_status, 
                COALESCE(guss_address, ''), COALESCE(guss_phone, ''), 
@@ -71,8 +72,19 @@ func (r *mysqlRepo) CreateUser(u *domain.User) error {
 	return nil
 }
 
-// 5. 예약 생성
+// 5. 예약 생성 (중복 체크 및 트랜잭션)
 func (r *mysqlRepo) CreateReservation(userNum, gymNum int64) (string, error) {
+	// [추가] 중복 예약 확인: 이미 'CONFIRMED' 상태인 예약이 있는지 체크
+	var count int
+	checkQuery := `SELECT COUNT(*) FROM revs_table WHERE fk_user_number = ? AND fk_guss_number = ? AND revs_status = 'CONFIRMED'`
+	err := r.db.QueryRow(checkQuery, userNum, gymNum).Scan(&count)
+	if err != nil {
+		return "", err
+	}
+	if count > 0 {
+		return "", errors.New("이미 해당 체육관에 예약이 존재합니다")
+	}
+
 	tx, err := r.db.Begin()
 	if err != nil {
 		return "", err
@@ -93,12 +105,12 @@ func (r *mysqlRepo) CreateReservation(userNum, gymNum int64) (string, error) {
 	return "SUCCESS", tx.Commit()
 }
 
-// 6. 예약 목록 조회 (에러 났던 부분 수정)
+// 6. 예약 목록 조회
 func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
 	query := `SELECT r.revs_number, r.fk_user_number, r.fk_guss_number, r.revs_status, r.revs_time, u.user_name
-	          FROM revs_table r
-	          JOIN user_table u ON r.fk_user_number = u.user_number
-	          WHERE r.fk_guss_number = ?`
+              FROM revs_table r
+              JOIN user_table u ON r.fk_user_number = u.user_number
+              WHERE r.fk_guss_number = ?`
 
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
@@ -109,7 +121,6 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 	var list []domain.Reservation
 	for rows.Next() {
 		var res domain.Reservation
-		// Scan 대상을 domain 필드명과 정확히 매칭 (FKUserID, FKGussID 등)
 		err := rows.Scan(&res.RevsNumber, &res.FKUserID, &res.FKGussID, &res.RevsStatus, &res.RevsTime, &res.UserName)
 		if err != nil {
 			continue
@@ -119,7 +130,7 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 	return list, nil
 }
 
-// 7. 기구 관련 (필드명 매칭: ID, GymID, Name 등)
+// 7. 기구 관리 로직들
 func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
 	query := `SELECT equip_id, fk_guss_number, equip_name, equip_category, equip_quantity, equip_status, purchase_date 
               FROM equipment_table WHERE fk_guss_number = ?`
