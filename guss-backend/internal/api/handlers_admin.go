@@ -2,45 +2,41 @@ package api
 
 import (
 	"encoding/json"
-	"guss-backend/internal/domain" // 추가
 	"net/http"
-	"strconv"
 )
 
+// HandleDashboard: 관리자 메인 대시보드 통계 데이터 (Mock 데이터)
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"active_now": 12, "status": "Running", "total_users": 150, "total_revenue": 500000,
-	})
+
+	stats := map[string]interface{}{
+		"status":        "Running",
+		"active_now":    12,
+		"total_revenue": 500000,
+	}
+	json.NewEncoder(w).Encode(stats)
 }
 
-func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
-	var req domain.Equipment
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "JSON 파싱 에러: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// 실제 DB 저장 (mysql_repository의 AddEquipment 호출)
-	if err := s.Repo.AddEquipment(&req); err != nil {
-		http.Error(w, "DB 저장 실패: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusCreated)
-}
-
-func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
-	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gym_id"), 10, 64)
-	equipments, _ := s.Repo.GetEquipmentsByGymID(gymID)
+// HandleGetReservations: 예약 현황 로그 조회 (Mock 데이터)
+func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(equipments)
+
+	logs := []map[string]interface{}{
+		{"revs_number": 1, "user_name": "김철수", "user_phone": "010-1234-5678", "revs_status": "CONFIRMED"},
+		{"revs_number": 2, "user_name": "이영희", "user_phone": "010-9876-5432", "revs_status": "CONFIRMED"},
+	}
+	json.NewEncoder(w).Encode(logs)
 }
 
-func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.ParseInt(r.URL.Path[len("/api/equipments/"):], 10, 64)
-	s.Repo.DeleteEquipment(id)
-	w.WriteHeader(http.StatusOK)
+// HandleGetSales: 매출 로그 조회 (Mock 데이터)
+func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	logs := []map[string]interface{}{
+		{"type": "일일권", "amount": 10000, "date": "2026-01-13 14:00"},
+		{"type": "PT 10회", "amount": 450000, "date": "2026-01-13 15:30"},
+	}
+	json.NewEncoder(w).Encode(logs)
 }
 
-func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {}
-func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request)        {}
+// 주의: AuthMiddleware 함수는 middleware.go에 이미 있으므로 여기서 삭제했습니다.
