@@ -1,0 +1,31 @@
+# 1. 테라폼 로컬 캐시 및 바이너리
+.terraform/
+*.exe
+
+# 2. 테라폼 상태 파일 (가장 중요: 보안 및 충돌 방지)
+# tfstate 파일에는 DB 암호 등 민감한 정보가 평문으로 들어있어 절대 올리면 안 됩니다.
+*.tfstate
+*.tfstate.*
+
+# 3. 변수 정의 파일 (Secrets 포함 가능성)
+# 실제 암호나 API 키를 담는 파일이므로 제외합니다.
+*.tfvars
+*.tfvars.json
+
+# 4. 테라폼 실행 로그 및 크래시 로그
+crash.log
+crash.*.log
+
+# 5. 테라폼 플랜 파일 (방금 만드신 plan.tfplan 포함)
+# 플랜 파일은 실행 시점의 임시 파일이므로 공유할 필요가 없습니다.
+*.tfplan
+
+# 6. 로컬 설정 오버라이드 파일
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# 7. 테라폼 CLI 환경 설정
+.terraformrc
+terraform.rc

@@ -31,7 +31,7 @@ func (s *Server) errorJSON(w http.ResponseWriter, message string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// HandleLogin: 실제 DB 조회, 비밀번호 검증 및 JWT 발급
+// HandleLogin: 유저/관리자 통합 로그인 및 지점별 권한 부여
 func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -45,41 +45,72 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. DB에서 해당 유저 아이디로 정보 조회
+	var userNumber int64
+	var userName string
+	var hashedPassword string
+	var role string = "USER"
+	var gymID int64 = 0 // 관리자의 담당 지점 ID (0은 전체 권한 의미)
+
+	// 1. 먼저 일반 유저 테이블에서 조회
 	user, err := s.Repo.GetUserByID(input.UserID)
-	if err != nil {
-		s.errorJSON(w, "존재하지 않는 사용자 아이디입니다.", http.StatusUnauthorized)
-		return
-	}
-
-	// 2. 비밀번호 검증 (Bcrypt 비교)
-	if !auth.CheckPasswordHash(input.UserPW, user.UserPW) {
-		s.errorJSON(w, "비밀번호가 일치하지 않습니다.", http.StatusUnauthorized)
-		return
-	}
-
-	// 3. 진짜 JWT 토큰 생성 (관리자 여부 판단 로직 필요 시 추가)
-	// 예: ID가 admin이면 ADMIN 권한 부여
-	role := "USER"
-	if user.UserID == "admin" {
+	if err == nil {
+		userNumber = user.UserNumber
+		userName = user.UserName
+		hashedPassword = user.UserPW
+		// 아이디가 admin인 유저는 USER 테이블에 있더라도 ADMIN으로 취급
+		if user.UserID == "admin" {
+			role = "ADMIN"
+		}
+	} else {
+		// 2. 유저가 없으면 관리자 전용 테이블(admin_table) 조회
+		admin, err := s.Repo.GetAdminByID(input.UserID)
+		if err != nil {
+			s.errorJSON(w, "아이디 또는 비밀번호가 일치하지 않습니다.", http.StatusUnauthorized)
+			return
+		}
+		userNumber = admin.AdminNumber
+		userName = "관리자(" + admin.AdminID + ")"
+		hashedPassword = admin.AdminPW
 		role = "ADMIN"
+
+		// [중요] sql.NullInt64 안전하게 처리 (super_admin은 NULL이므로 Valid가 false)
+		if admin.FKGussID.Valid {
+			gymID = admin.FKGussID.Int64 // 지점 관리자
+		} else {
+			gymID = 0 // 최고 관리자 (NULL)
+		}
 	}
-	
-	token, err := auth.GenerateToken(user.UserNumber, user.UserID, role)
+
+	// 3. 비밀번호 검증 (Bcrypt)
+	if !auth.CheckPasswordHash(input.UserPW, hashedPassword) {
+		s.errorJSON(w, "아이디 또는 비밀번호가 일치하지 않습니다.", http.StatusUnauthorized)
+		return
+	}
+
+	// 4. 최고 관리자 ID 별도 판단 (로직 보강 가능)
+	if input.UserID == "super_admin" {
+		role = "SUPER_ADMIN"
+	}
+
+	// 5. 토큰 생성 및 응답
+	token, err := auth.GenerateToken(userNumber, input.UserID, role)
 	if err != nil {
 		s.errorJSON(w, "토큰 생성 실패", http.StatusInternalServerError)
 		return
 	}
 
+	log.Printf("[LOGIN] %s 접속 (Role: %s, GymID: %d)", input.UserID, role, gymID)
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "success",
 		"token":     token,
-		"user_name": user.UserName,
+		"user_name": userName,
 		"user_role": role,
+		"gym_id":    gymID, // 프론트엔드에서 지점 필터링에 사용
 	})
 }
 
-// HandleRegister: 비밀번호 해싱 후 DB 저장
+// HandleRegister: 회원가입 (Bcrypt 적용)
 func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var u domain.User
@@ -89,7 +120,6 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 비밀번호 해싱 처리
 	hashedPW, err := auth.HashPassword(u.UserPW)
 	if err != nil {
 		s.errorJSON(w, "비밀번호 처리 중 오류 발생", 500)
@@ -109,7 +139,7 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleReserve: JWT 토큰에서 유저 정보를 추출하여 예약 처리
+// HandleReserve: 중복 예약 방지 로직 적용
 func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -124,17 +154,14 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 		req.GymID = req.FkGussNumber
 	}
 
-	// [중요] 미들웨어에서 넣어준 Claims에서 유저 번호 추출
 	claims, ok := r.Context().Value(UserContextKey).(*auth.Claims)
 	if !ok {
 		s.errorJSON(w, "인증 정보가 없습니다.", http.StatusUnauthorized)
 		return
 	}
 
-	// DB 예약 로직 호출 (중복 예약 방지 로직이 포함된 Repo 메서드)
 	_, err := s.Repo.CreateReservation(claims.UserNumber, req.GymID)
 	if err != nil {
-		// [수정] 500 에러가 아닌 400 에러를 반환하여 프론트에서 경고 모달을 띄우게 함
 		s.errorJSON(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -143,17 +170,18 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// --- 관리자 핸들러 (Mock 데이터 포함) ---
-
+// HandleDashboard: 지점별 실시간 통계
 func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	stats := map[string]interface{}{
-		"status":     "Running",
-		"active_now": 12,
+		"status":      "Running",
+		"active_now":  12,
+		"server_time": time.Now().Format("2006-01-02 15:04:05"),
 	}
 	json.NewEncoder(w).Encode(stats)
 }
 
+// HandleGetSales: 매출 데이터 조회 (향후 DynamoDB 마이그레이션 대상)
 func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	logs := []map[string]interface{}{
@@ -227,14 +255,9 @@ func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// [디버그 로그] 프론트에서 넘어온 데이터 확인
-	log.Printf("[DEBUG] 수정 요청 데이터: %+v", eq)
-
-	// JSON 바디에 ID가 없으면 URL 경로에서 추출
 	if eq.ID <= 0 {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		if len(parts) > 0 {
-			// 경로의 가장 마지막 요소를 ID로 간주
 			id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
 			eq.ID = id
 		}
@@ -245,9 +268,8 @@ func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.Repo.UpdateEquipment(&eq)
-	if err != nil {
-		s.errorJSON(w, "DB 수정 실패: "+err.Error(), 500)
+	if err := s.Repo.UpdateEquipment(&eq); err != nil {
+		s.errorJSON(w, "DB 수정 실패", 500)
 		return
 	}
 
@@ -268,7 +290,6 @@ func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// 1. 쿼리 스트링에서 gym_id 추출
 	idStr := r.URL.Query().Get("gym_id")
 	if idStr == "" {
 		idStr = r.URL.Query().Get("gymId")
@@ -280,15 +301,11 @@ func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. DB에서 예약 목록 조회
 	list, err := s.Repo.GetReservationsByGym(id)
 	if err != nil {
 		s.errorJSON(w, "예약 목록 조회 실패", http.StatusInternalServerError)
 		return
 	}
 
-	// 3. JSON 응답
 	json.NewEncoder(w).Encode(list)
 }
-
-// test

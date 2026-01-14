@@ -23,7 +23,7 @@ func (r *mysqlRepo) GetGyms() ([]domain.Gym, error) {
                guss_user_count, guss_size,
                COALESCE(guss_open_time, ''), COALESCE(guss_close_time, '') 
                FROM guss_table`
-	
+
 	rows, err := r.db.Query(query)
 	if err != nil {
 		log.Printf("[DB ERROR] GetGyms Query: %v", err)
@@ -32,7 +32,7 @@ func (r *mysqlRepo) GetGyms() ([]domain.Gym, error) {
 	defer rows.Close()
 
 	// 프론트엔드에서 .map() 에러가 나지 않도록 nil이 아닌 빈 슬라이스로 초기화
-	gyms := []domain.Gym{} 
+	gyms := []domain.Gym{}
 
 	for rows.Next() {
 		var g domain.Gym
@@ -59,7 +59,7 @@ func (r *mysqlRepo) GetGymDetail(id int64) (*domain.Gym, error) {
                      guss_user_count, guss_size,
                      COALESCE(guss_open_time, ''), COALESCE(guss_close_time, '')
               FROM guss_table WHERE guss_number = ?`
-	
+
 	err := r.db.QueryRow(query, id).Scan(
 		&g.GussNumber, &g.GussName, &g.GussStatus,
 		&g.GussAddress, &g.GussPhone, &g.GussUserCount, &g.GussSize,
@@ -139,7 +139,7 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
               FROM revs_table r
               JOIN user_table u ON r.fk_user_number = u.user_number
               WHERE r.fk_guss_number = ?`
-	
+
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
 	query := `SELECT equip_id, fk_guss_number, equip_name, equip_category, equip_quantity, equip_status, purchase_date 
               FROM equipment_table WHERE fk_guss_number = ?`
-	
+
 	rows, err := r.db.Query(query, id)
 	if err != nil {
 		log.Printf("[DB ERROR] GetEquipments: %v", err)
@@ -171,7 +171,7 @@ func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
 	defer rows.Close()
 
 	// [중요] 데이터가 없어도 nil이 아닌 [] 슬라이스를 반환하여 프론트엔드 map 에러 방지
-	list := []domain.Equipment{} 
+	list := []domain.Equipment{}
 	for rows.Next() {
 		var e domain.Equipment
 		err := rows.Scan(&e.ID, &e.GymID, &e.Name, &e.Category, &e.Quantity, &e.Status, &e.PurchaseDate)
@@ -203,5 +203,23 @@ func (r *mysqlRepo) DeleteEquipment(id int64) error {
 }
 
 func (r *mysqlRepo) GetSalesByGym(id int64) ([]map[string]interface{}, error) {
-	return []map[string]interface{}{}, nil 
+	return []map[string]interface{}{}, nil
+}
+
+func (r *mysqlRepo) GetAdminByID(id string) (*domain.Admin, error) {
+	var a domain.Admin
+	query := `SELECT admin_number, admin_id, admin_pw, fk_guss_number 
+              FROM admin_table WHERE admin_id = ?`
+
+	// [수정] &a.FKGussID (NullInt64)로 스캔
+	err := r.db.QueryRow(query, id).Scan(
+		&a.AdminNumber,
+		&a.AdminID,
+		&a.AdminPW,
+		&a.FKGussID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
 }

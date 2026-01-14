@@ -15,6 +15,8 @@ type Repository interface {
 	CreateReservation(userNum, gymNum int64) (string, error)
 	GetReservationsByGym(gymID int64) ([]domain.Reservation, error)
 
+	GetAdminByID(id string) (*domain.Admin, error)
+
 	// Equipment 관련 (메서드 명칭 통일)
 	GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error)
 	AddEquipment(eq *domain.Equipment) error // domain 객체를 받도록 설정

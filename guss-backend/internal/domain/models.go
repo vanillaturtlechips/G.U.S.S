@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 // 1. 사용자 정보 (user_table)
 type User struct {
@@ -47,8 +50,8 @@ type Reservation struct {
 
 // 5. 관리자 정보 (admin_table)
 type Admin struct {
-	AdminNumber int64  `json:"admin_number"   db:"admin_number"`
-	AdminID     string `json:"admin_id"       db:"admin_id"`
-	AdminPW     string `json:"-"              db:"admin_pw"`
-	FKGussID    int64  `json:"fk_guss_number" db:"fk_guss_number"`
+	AdminNumber int64         `json:"admin_number"   db:"admin_number"`
+	AdminID     string        `json:"admin_id"       db:"admin_id"`
+	AdminPW     string        `json:"-"              db:"admin_pw"`
+	FKGussID    sql.NullInt64 `json:"fk_guss_number"`
 }
