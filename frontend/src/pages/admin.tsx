@@ -2,73 +2,144 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package, Calendar, DollarSign, Plus, Edit, Trash2, 
-  Search, Download, Eye, Shield, Activity, TrendingUp
+  Shield, Activity, TrendingUp, Search, MapPin
 } from 'lucide-react';
+
+/* --- 인터페이스 정의 --- */
+interface Equipment {
+  id: number;
+  gym_id: number;
+  name: string;
+  category: string;
+  quantity: number;
+  status: string;
+  purchaseDate: string;
+}
+
+interface Gym {
+  guss_number: number;
+  guss_name: string;
+  guss_address: string;
+  guss_status: string;
+  guss_user_count?: number;
+}
 
 export default function AdminPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'equipment' | 'reservation' | 'revenue'>('equipment');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null); // 수정용 상태
   const [newEquipment, setNewEquipment] = useState({ name: '', category: '', quantity: '' });
+  
+  const [gyms, setGyms] = useState<Gym[]>([]); 
+  const [selectedGymId, setSelectedGymId] = useState<number | null>(null); 
+  const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // [추가] 어드민 권한 체크 로직 (디자인 영향 없음)
-  useEffect(() => {
-    const role = localStorage.getItem('userRole');
-    const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  const API_BASE = "http://localhost:9000/api"; 
+  const token = localStorage.getItem('token');
 
-    if (!isLoggedIn || role !== 'ADMIN') {
-      alert('관리자 전용 구역입니다. 접근 권한이 없습니다.');
-      navigate('/');
-    }
-  }, [navigate]);
+  useEffect(() => { fetchGyms(); }, []);
 
-  const equipment = [
-    { id: 1, name: '트레드밀', category: '유산소', quantity: 10, status: 'active', purchaseDate: '2023-01-15' },
-    { id: 2, name: '벤치프레스', category: '웨이트', quantity: 6, status: 'active', purchaseDate: '2023-02-20' },
-    { id: 3, name: '스쿼트랙', category: '웨이트', quantity: 4, status: 'maintenance', purchaseDate: '2023-03-10' },
-    { id: 4, name: '레그프레스', category: '머신', quantity: 3, status: 'active', purchaseDate: '2023-04-05' },
-    { id: 5, name: '일립티컬', category: '유산소', quantity: 6, status: 'active', purchaseDate: '2023-01-15' },
-  ];
-
-  const reservations = [
-    { id: 1, member: '김민수', phone: '010-1234-5678', time: '14:00-15:00', date: '2024-01-08', status: 'confirmed' },
-    { id: 2, member: '이지은', phone: '010-2345-6789', time: '15:00-17:00', date: '2024-01-08', status: 'confirmed' },
-    { id: 3, member: '박준혁', phone: '010-3456-7890', time: '16:00-17:00', date: '2024-01-08', status: 'pending' },
-    { id: 4, member: '최서연', phone: '010-4567-8901', time: '17:00-18:00', date: '2024-01-08', status: 'cancelled' },
-    { id: 5, member: '정우성', phone: '010-5678-9012', time: '18:00-20:00', date: '2024-01-08', status: 'confirmed' },
-  ];
-
-  const revenue = [
-    { id: 1, member: '홍길동', type: '월회원권', amount: 150000, method: '카드', date: '2024-01-08 14:23', status: 'completed' },
-    { id: 2, member: '강수진', type: '3개월권', amount: 400000, method: '계좌이체', date: '2024-01-08 13:15', status: 'completed' },
-    { id: 3, member: '윤서준', type: 'PT 10회', amount: 500000, method: '카드', date: '2024-01-08 11:47', status: 'completed' },
-    { id: 4, member: '한지민', type: '일일권', amount: 15000, method: '현금', date: '2024-01-08 10:20', status: 'completed' },
-    { id: 5, member: '김태희', type: '월회원권', amount: 150000, method: '카드', date: '2024-01-08 09:35', status: 'completed' },
-  ];
-
-  const totalRevenue = revenue.reduce((sum, item) => sum + item.amount, 0);
-  const totalEquipment = equipment.reduce((sum, item) => sum + item.quantity, 0);
-
-  const handleAddEquipment = () => {
-    if (!newEquipment.name || !newEquipment.category || !newEquipment.quantity) {
-      alert('모든 항목을 입력해주세요!');
-      return;
-    }
-    alert(`기구 등록 완료!\n이름: ${newEquipment.name}\n카테고리: ${newEquipment.category}\n수량: ${newEquipment.quantity}`);
-    setShowAddModal(false);
-    setNewEquipment({ name: '', category: '', quantity: '' });
+  const fetchGyms = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/gyms`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setGyms(data || []);
+      if (data && data.length > 0) setSelectedGymId(data[0].guss_number);
+    } catch (err) { console.error("체육관 로드 실패", err); }
   };
 
+  useEffect(() => { if (selectedGymId) fetchTabData(); }, [selectedGymId, activeTab]);
+
+  const fetchTabData = async () => {
+    if (!selectedGymId) return;
+    setIsLoading(true);
+    try {
+      if (activeTab === 'equipment') {
+        const res = await fetch(`${API_BASE}/equipments?gymId=${selectedGymId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setEquipmentList(data || []);
+      }
+    } catch (err) { console.error("데이터 조회 실패", err); }
+    finally { setIsLoading(false); }
+  };
+
+  // [기능 추가] 기구 삭제
+  const handleDeleteEquipment = async (id: number) => {
+    if (!window.confirm("이 기구를 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/equipments/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) fetchTabData();
+      else alert("삭제 실패");
+    } catch (err) { alert("삭제 통신 오류"); }
+  };
+
+  // [기능 추가] 기구 등록 및 수정 통합 핸들러
+  const handleSaveEquipment = async () => {
+    if (!selectedGymId) return;
+    
+    // 수정이면 PUT, 등록이면 POST
+    const isEdit = !!editingEquipment;
+    const url = isEdit ? `${API_BASE}/equipments/${editingEquipment.id}` : `${API_BASE}/equipments`;
+    const method = isEdit ? 'PUT' : 'POST';
+
+    try {
+      const res = await fetch(url, {
+        method: method,
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          gym_id: selectedGymId,
+          name: newEquipment.name,
+          category: newEquipment.category,
+          quantity: parseInt(newEquipment.quantity),
+          status: 'active',
+          purchaseDate: isEdit ? editingEquipment.purchaseDate : new Date().toISOString().split('T')[0]
+        })
+      });
+
+      if (res.ok) {
+        setShowAddModal(false);
+        setEditingEquipment(null);
+        setNewEquipment({ name: '', category: '', quantity: '' });
+        fetchTabData(); 
+      }
+    } catch (err) { alert('처리 실패'); }
+  };
+
+  const openEditModal = (item: Equipment) => {
+    setEditingEquipment(item);
+    setNewEquipment({ 
+      name: item.name, 
+      category: item.category, 
+      quantity: item.quantity.toString() 
+    });
+    setShowAddModal(true);
+  };
+
+  const currentGym = gyms.find(g => g.guss_number === selectedGymId);
+
   return (
-    <div className="min-h-screen bg-black text-white flex font-sans">
-      <div className="fixed inset-0 opacity-20 pointer-events-none">
+    <div className="min-h-screen bg-black text-white flex font-sans overflow-hidden">
+      {/* 배경/사이드바 로직 생략 (기존과 동일) */}
+      <div className="fixed inset-0 opacity-20 pointer-events-none z-0">
         <div className="absolute inset-0" style={{
           backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`,
           backgroundSize: '40px 40px'
         }} />
       </div>
 
-      <div className="w-80 bg-zinc-950 border-r-2 border-emerald-500/30 p-6 relative z-10 flex flex-col h-screen sticky top-0">
+      <div className="w-80 bg-zinc-950 border-r-2 border-emerald-500/30 p-6 relative z-10 flex flex-col h-screen">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center shadow-[0_0_15px_rgba(16,185,129,0.5)]">
@@ -76,70 +147,168 @@ export default function AdminPage() {
             </div>
             <div>
               <h1 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-lime-400"
-                  style={{ fontFamily: 'Orbitron, sans-serif' }}>
-                GUSS ADMIN
-              </h1>
+                  style={{ fontFamily: 'Orbitron, sans-serif' }}>GUSS ADMIN</h1>
               <p className="text-xs text-emerald-500">Management System</p>
             </div>
           </div>
           <div className="h-1 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-full" />
         </div>
 
-        <nav className="flex-1 space-y-3">
+        <nav className="space-y-3 mb-8">
           <MenuButton active={activeTab === 'equipment'} onClick={() => setActiveTab('equipment')} icon={<Package className="w-6 h-6" />} label="기구 등록" />
           <MenuButton active={activeTab === 'reservation'} onClick={() => setActiveTab('reservation')} icon={<Calendar className="w-6 h-6" />} label="예약 현황 (로그)" />
           <MenuButton active={activeTab === 'revenue'} onClick={() => setActiveTab('revenue')} icon={<DollarSign className="w-6 h-6" />} label="매출 (로그)" />
         </nav>
 
-        <div className="mt-auto bg-zinc-900 border border-emerald-500/30 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
-            <span className="text-sm font-bold text-emerald-400">System Status</span>
-          </div>
-          <div className="text-xs text-zinc-500 space-y-2 font-mono">
-            <StatusRow label="서버 상태" value="Online" />
-            <StatusRow label="데이터베이스" value="Connected" />
-            <div className="flex justify-between"><span>마지막 업데이트</span><span>방금 전</span></div>
+        <div className="bg-zinc-900/50 border-2 border-emerald-500/20 rounded-2xl p-4 mb-6">
+          <label className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.2em] mb-3 block">Select Gymnasium</label>
+          <div className="relative">
+            <select 
+              value={selectedGymId || ''} 
+              onChange={(e) => setSelectedGymId(Number(e.target.value))}
+              className="w-full bg-black border border-emerald-500/30 rounded-xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:border-emerald-500 transition-all appearance-none cursor-pointer"
+            >
+              {gyms.map(gym => (
+                <option key={gym.guss_number} value={gym.guss_number} className="bg-zinc-900">{gym.guss_name}</option>
+              ))}
+            </select>
+            <Search className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500 pointer-events-none" />
           </div>
         </div>
       </div>
 
-      <div className="flex-1 relative z-10 overflow-y-auto">
-        <div className="p-8">
-          <div className="grid grid-cols-3 gap-6 mb-8">
-            <StatCard icon={<Package className="w-8 h-8 text-emerald-400" />} label="총 기구" value={`${totalEquipment}대`} />
-            <StatCard icon={<Calendar className="w-8 h-8 text-emerald-400" />} label="오늘 예약" value={`${reservations.length}건`} />
-            <StatCard icon={<DollarSign className="w-8 h-8 text-emerald-400" />} label="오늘 매출" value={`${(totalRevenue / 10000).toFixed(0)}만원`} />
-          </div>
+      <div className="flex-1 relative z-10 overflow-y-auto p-8">
+        <div className="grid grid-cols-3 gap-6 mb-8">
+          <StatCard icon={<Package className="w-8 h-8 text-emerald-400" />} label="총 기구" value={`${equipmentList.length}종`} />
+          <StatCard icon={<Activity className="w-8 h-8 text-emerald-400" />} label="현재 이용객" value={`${currentGym?.guss_user_count || 0}명`} />
+          <StatCard icon={<TrendingUp className="w-8 h-8 text-emerald-400" />} label="지점 상태" value={currentGym?.guss_status || "Running"} />
+        </div>
 
-          <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="h-1 bg-gradient-to-r from-emerald-500 to-lime-500" />
-            {activeTab === 'equipment' && (
-              <div className="p-8">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-3xl font-black text-white">기구 관리</h2>
-                  <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-bold hover:scale-105 transition-all shadow-lg shadow-emerald-500/50">
-                    <Plus className="w-5 h-5" /> 기구 추가
-                  </button>
-                </div>
-                <div className="space-y-3">
-                  {equipment.map(item => <EquipmentItem key={item.id} item={item} />)}
-                </div>
+        <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl overflow-hidden shadow-2xl">
+          <div className="h-1 bg-gradient-to-r from-emerald-500 to-lime-500" />
+          
+          <div className="p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-3xl font-black text-white uppercase tracking-tighter" style={{ fontFamily: 'Orbitron' }}>
+                  {activeTab === 'equipment' ? '기구 관리' : activeTab === 'reservation' ? '예약 내역' : '매출 로그'}
+                </h2>
+                <p className="text-emerald-500 font-bold mt-1">{currentGym?.guss_name}</p>
               </div>
-            )}
-            {activeTab === 'reservation' && <ReservationTable data={reservations} />}
-            {activeTab === 'revenue' && <RevenueTable data={revenue} total={totalRevenue} />}
+              
+              {activeTab === 'equipment' && (
+                <button 
+                  onClick={() => {
+                    setEditingEquipment(null);
+                    setNewEquipment({ name: '', category: '', quantity: '' });
+                    setShowAddModal(true);
+                  }} 
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-black hover:scale-105 transition-all shadow-[0_0_20px_rgba(16,185,129,0.4)]"
+                >
+                  <Plus className="w-5 h-5" /> 기구 추가
+                </button>
+              )}
+            </div>
+
+            {isLoading ? (
+              <div className="py-20 text-center text-emerald-500 animate-pulse font-bold tracking-widest">DATA SYNCING...</div>
+            ) : activeTab === 'equipment' ? (
+              <div className="space-y-4">
+                {equipmentList.length === 0 ? (
+                  <div className="py-20 text-center text-zinc-700 border-2 border-dashed border-zinc-900 rounded-3xl font-bold">등록된 기구가 없습니다.</div>
+                ) : (
+                  equipmentList.map(item => (
+                    <EquipmentItem 
+                      key={item.id} 
+                      item={item} 
+                      onEdit={() => openEditModal(item)} 
+                      onDelete={() => handleDeleteEquipment(item.id)} 
+                    />
+                  ))
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
 
-      {showAddModal && <AddModal newEquipment={newEquipment} setNewEquipment={setNewEquipment} onClose={() => setShowAddModal(false)} onConfirm={handleAddEquipment} />}
-      
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');`}</style>
+      {showAddModal && (
+        <AddModal 
+          onClose={() => { setShowAddModal(false); setEditingEquipment(null); }} 
+          onConfirm={handleSaveEquipment} 
+          data={newEquipment} 
+          setData={setNewEquipment}
+          isEdit={!!editingEquipment}
+        />
+      )}
     </div>
   );
 }
 
+/* --- 하단 컴포넌트에 이벤트 연결 --- */
+
+const EquipmentItem = ({ item, onEdit, onDelete }: { item: Equipment, onEdit: any, onDelete: any }) => (
+  <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-2xl p-6 flex items-center justify-between hover:border-emerald-500/40 transition-all group">
+    <div className="flex items-center gap-5">
+      <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center text-black shadow-lg shadow-emerald-500/20">
+        <Package size={28} />
+      </div>
+      <div>
+        <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">{item.name}</h3>
+        <div className="flex items-center gap-3 mt-1.5">
+          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded border border-emerald-500/20 uppercase tracking-tighter">{item.category}</span>
+          <span className="text-zinc-500 text-xs font-bold">{item.quantity}대 보유</span>
+          <span className={`text-xs font-black flex items-center gap-1 ${item.status === 'active' ? 'text-lime-500' : 'text-amber-500'}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${item.status === 'active' ? 'bg-lime-500' : 'bg-amber-500 animate-pulse'}`} /> 
+            {item.status === 'active' ? '정상' : '점검중'}
+          </span>
+        </div>
+      </div>
+    </div>
+    <div className="flex gap-2">
+      {/* 이제 onClick 이벤트가 연결되었습니다 */}
+      <button 
+        onClick={onEdit}
+        className="p-3 bg-zinc-800 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-all text-emerald-400"
+      >
+        <Edit size={18} />
+      </button>
+      <button 
+        onClick={onDelete}
+        className="p-3 bg-zinc-800 hover:bg-red-500/20 border border-red-500/20 rounded-xl transition-all text-red-500"
+      >
+        <Trash2 size={18} />
+      </button>
+    </div>
+  </div>
+);
+
+// AddModal에도 타이틀 분기 처리 추가
+const AddModal = ({ onClose, onConfirm, data, setData, isEdit }: any) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
+    <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl p-8 max-w-md w-full shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+      <h3 className="text-2xl font-black text-white mb-6 text-center tracking-widest uppercase" style={{ fontFamily: 'Orbitron' }}>
+        {isEdit ? 'Update Equipment' : 'New Equipment'}
+      </h3>
+      <div className="space-y-4">
+        <input value={data.name} placeholder="이름" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-white outline-none" 
+               onChange={e => setData({...data, name: e.target.value})} />
+        <input value={data.category} placeholder="카테고리" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-white outline-none" 
+               onChange={e => setData({...data, category: e.target.value})} />
+        <input value={data.quantity} type="number" placeholder="수량" className="w-full bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-white outline-none" 
+               onChange={e => setData({...data, quantity: e.target.value})} />
+        <div className="flex gap-3 mt-8">
+          <button onClick={onClose} className="flex-1 py-4 bg-zinc-800 text-zinc-400 font-bold rounded-xl">CANCEL</button>
+          <button onClick={onConfirm} className="flex-1 py-4 bg-gradient-to-r from-emerald-500 to-lime-500 text-black font-black rounded-xl">
+            {isEdit ? 'UPDATE' : 'REGISTER'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// (StatCard, MenuButton 등은 기존과 동일)
 const MenuButton = ({ active, onClick, icon, label }: any) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-5 py-4 rounded-xl font-bold transition-all ${active ? 'bg-gradient-to-r from-emerald-500 to-lime-500 text-black shadow-lg shadow-emerald-500/50' : 'bg-zinc-900 text-emerald-400 hover:bg-zinc-800 border border-emerald-500/20'}`}>
     {icon} <span>{label}</span>
@@ -147,121 +316,12 @@ const MenuButton = ({ active, onClick, icon, label }: any) => (
 );
 
 const StatCard = ({ icon, label, value }: any) => (
-  <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-6 hover:border-emerald-500/50 transition-all group">
-    <div className="flex items-center justify-between mb-3">
-      {icon} <TrendingUp className="w-5 h-5 text-emerald-400 opacity-50 group-hover:opacity-100" />
+  <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-6 hover:border-emerald-500/50 transition-all relative overflow-hidden group">
+    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-30 transition-opacity">{icon}</div>
+    <div className="relative z-10">
+      <div className="flex items-center justify-between mb-3 text-emerald-400">{icon} <TrendingUp className="w-5 h-5 opacity-50" /></div>
+      <p className="text-xs text-emerald-500/70 font-black uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-4xl font-black text-white">{value}</p>
     </div>
-    <p className="text-sm text-emerald-400 mb-1">{label}</p>
-    <p className="text-4xl font-black text-white">{value}</p>
-  </div>
-);
-
-const EquipmentItem = ({ item }: any) => (
-  <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-2xl p-6 hover:border-emerald-500/40 transition-all">
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-4">
-        <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center text-black font-bold"><Package size={32} /></div>
-        <div>
-          <h3 className="text-xl font-bold text-white mb-1">{item.name}</h3>
-          <div className="flex items-center gap-3">
-            <span className="px-3 py-1 bg-emerald-500/20 text-emerald-400 text-sm font-bold rounded-lg border border-emerald-500/30">{item.category}</span>
-            <span className="text-white font-semibold">{item.quantity}대</span>
-            <span className={`px-3 py-1 text-sm font-bold rounded-lg border ${item.status === 'active' ? 'bg-lime-500/20 text-lime-400 border-lime-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}`}>{item.status === 'active' ? '정상' : '점검중'}</span>
-          </div>
-        </div>
-      </div>
-      <div className="flex gap-2">
-        <button className="p-3 bg-zinc-800 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl transition-all"><Edit className="w-5 h-5 text-emerald-400" /></button>
-        <button className="p-3 bg-zinc-800 hover:bg-red-500/20 border border-red-500/30 rounded-xl transition-all"><Trash2 className="w-5 h-5 text-red-400" /></button>
-      </div>
-    </div>
-  </div>
-);
-
-const ReservationTable = ({ data }: any) => (
-  <div className="p-8 overflow-x-auto">
-    <h2 className="text-3xl font-black text-white mb-6">예약 현황 로그</h2>
-    <table className="w-full">
-      <thead>
-        <tr className="border-b-2 border-emerald-500/30 text-emerald-400 font-bold">
-          <th className="text-left py-4 px-4">회원명</th><th className="text-left py-4 px-4">연락처</th>
-          <th className="text-left py-4 px-4">예약 시간</th><th className="text-left py-4 px-4">상태</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((item: any) => (
-          <tr key={item.id} className="border-b border-emerald-500/10 hover:bg-zinc-900/50 transition-colors">
-            <td className="py-4 px-4 text-white font-semibold">{item.member}</td>
-            <td className="py-4 px-4 text-zinc-400 font-mono text-sm">{item.phone}</td>
-            <td className="py-4 px-4 text-white font-semibold">{item.time}</td>
-            <td className="py-4 px-4">
-              <span className={`px-3 py-1 rounded-lg text-sm font-bold border ${item.status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>{item.status === 'confirmed' ? '확정' : '취소'}</span>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
-
-const RevenueTable = ({ data, total }: any) => (
-  <div className="p-8 overflow-x-auto">
-    <div className="flex justify-between items-center mb-6">
-      <h2 className="text-3xl font-black text-white">매출 로그</h2>
-      <div className="px-6 py-3 bg-gradient-to-r from-emerald-500/20 to-lime-500/20 border border-emerald-500/30 rounded-xl">
-        <p className="text-sm text-emerald-400">오늘 총 매출</p>
-        <p className="text-2xl font-black text-white">{total.toLocaleString()}원</p>
-      </div>
-    </div>
-    <table className="w-full">
-      <thead>
-        <tr className="border-b-2 border-emerald-500/30 text-emerald-400 font-bold">
-          <th className="text-left py-4 px-4">회원명</th><th className="text-left py-4 px-4">금액</th><th className="text-left py-4 px-4">일시</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.map((item: any) => (
-          <tr key={item.id} className="border-b border-emerald-500/10 hover:bg-zinc-900/50 transition-colors">
-            <td className="py-4 px-4 text-white font-semibold">{item.member}</td>
-            <td className="py-4 px-4 text-xl font-black text-emerald-400">{item.amount.toLocaleString()}원</td>
-            <td className="py-4 px-4 text-zinc-400 text-sm">{item.date}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
-
-const AddModal = ({ newEquipment, setNewEquipment, onClose, onConfirm }: any) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-    <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl p-8 max-w-md w-full shadow-[0_0_50px_rgba(16,185,129,0.2)]">
-      <div className="h-1 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-t-3xl mb-6" />
-      <h3 className="text-2xl font-black text-white mb-6 text-center uppercase tracking-widest" style={{ fontFamily: 'Orbitron' }}>Add New Equipment</h3>
-      <div className="space-y-4">
-        <Input label="기구 이름" value={newEquipment.name} onChange={(v:any) => setNewEquipment({...newEquipment, name: v})} placeholder="예: 트레드밀" />
-        <Input label="카테고리" value={newEquipment.category} onChange={(v:any) => setNewEquipment({...newEquipment, category: v})} placeholder="예: 유산소" />
-        <Input label="수량" value={newEquipment.quantity} onChange={(v:any) => setNewEquipment({...newEquipment, quantity: v})} placeholder="예: 10" />
-        <div className="flex gap-4 mt-6">
-          <button onClick={onClose} className="flex-1 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white font-bold">취소</button>
-          <button onClick={onConfirm} className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-black shadow-lg shadow-emerald-500/30">등록하기</button>
-        </div>
-      </div>
-    </div>
-  </div>
-);
-
-const Input = ({ label, value, onChange, placeholder }: any) => (
-  <div>
-    <label className="text-sm text-emerald-400 font-bold mb-2 block">{label}</label>
-    <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="w-full bg-black border-2 border-zinc-800 focus:border-emerald-500 rounded-xl px-4 py-3 text-white focus:outline-none transition-all" />
-  </div>
-);
-
-const StatusRow = ({ label, value }: any) => (
-  <div className="flex justify-between">
-    <span>{label}</span>
-    <span className="text-emerald-400 flex items-center gap-1">
-      <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" /> {value}
-    </span>
   </div>
 );

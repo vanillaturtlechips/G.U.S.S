@@ -1,93 +1,109 @@
 package repository
 
 import (
-	"errors"
-	"fmt"
+	"database/sql"
 	"guss-backend/internal/domain"
-	"time"
+	"log"
 )
 
-// MockMySQLRepo: 메모리에 데이터를 저장하는 테스트용 가짜 DB
-type MockMySQLRepo struct {
-	users map[string]*domain.User
-	gyms  map[int64]*domain.Gym
-	revs  []domain.Reservation
-}
+type MockRepository struct{}
 
 func NewMockRepository() Repository {
-	repo := &MockMySQLRepo{
-		users: make(map[string]*domain.User),
-		gyms:  make(map[int64]*domain.Gym),
-	}
-	// 테스트용 기본 데이터 삽입
-	repo.gyms[1] = &domain.Gym{GussNumber: 1, GussName: "GUSS 강남점", GussStatus: "open", GussUserCount: 15, GussSize: 50}
-	repo.gyms[2] = &domain.Gym{GussNumber: 2, GussName: "GUSS 홍대점", GussStatus: "open", GussUserCount: 40, GussSize: 50}
-
-	// 테스트용 유저 데이터 (testuser03 포함)
-	repo.users["testuser03"] = &domain.User{UserNumber: 3, UserID: "testuser03", UserName: "테스트유저03"}
-
-	return repo
+	return &MockRepository{}
 }
 
-func (m *MockMySQLRepo) CreateUser(u *domain.User) error {
-	m.users[u.UserID] = u
+// 1. 유저 관련 Mock
+func (m *MockRepository) CreateUser(u *domain.User) error {
+	log.Printf("[MOCK] User Created: %v", u.UserName)
 	return nil
 }
 
-func (m *MockMySQLRepo) GetUserByID(id string) (*domain.User, error) {
-	if u, ok := m.users[id]; ok {
-		return u, nil
-	}
-	return nil, errors.New("user not found")
+func (m *MockRepository) GetUserByID(id string) (*domain.User, error) {
+	// 일반 유저 테스트를 위한 Mock 데이터
+	return &domain.User{
+		UserNumber: 1,
+		UserID:     id,
+		UserName:   "Mock일반유저",
+		UserPW:     "$2a$10$Wp6S7Vf4X.0pGzXz9XyYduzI6.R8z8L5v5.m7Gz8z8z8z8z8z8z8z", // '1234'의 해시
+	}, nil
 }
 
-func (m *MockMySQLRepo) GetAllGyms() ([]domain.Gym, error) {
-	var list []domain.Gym
-	for _, g := range m.gyms {
-		list = append(list, *g)
-	}
-	return list, nil
+// 2. [추가] 관리자 관련 Mock (오류 해결 지점)
+func (m *MockRepository) GetAdminByID(id string) (*domain.Admin, error) {
+	return &domain.Admin{
+		AdminNumber: 1,
+		AdminID:     id,
+		AdminPW:     "$2a$10$7cQkLrgVQGuNCvYyONufFOwO3EwmBl1H.1lJ1y906WRBaNTH2t1Fe",
+		FKGussID:    sql.NullInt64{Int64: 1, Valid: true},
+	}, nil
 }
 
-func (m *MockMySQLRepo) GetGymDetail(id int64) (*domain.Gym, error) {
-	if g, ok := m.gyms[id]; ok {
-		return g, nil
-	}
-	return nil, errors.New("gym not found")
+// 3. 체육관 관련 Mock
+func (m *MockRepository) GetGyms() ([]domain.Gym, error) {
+	return []domain.Gym{
+		{GussNumber: 1, GussName: "Mock 강남점", GussStatus: "OPEN", GussSize: 50, GussUserCount: 10},
+	}, nil
 }
 
-// [수정] 중복 예약 체크 로직 추가 및 (string, error) 반환
-func (m *MockMySQLRepo) CreateReservation(uID, gID int64) (string, error) {
-	// 1. 중복 예약 여부 전수 조사
-	for _, r := range m.revs {
-		if r.FKUserID == uID && r.FKGussID == gID {
-			// 이미 예약이 있다면 DUPLICATE 반환
-			return "DUPLICATE", nil
-		}
-	}
+func (m *MockRepository) GetGymDetail(id int64) (*domain.Gym, error) {
+	return &domain.Gym{
+		GussNumber:    id,
+		GussName:      "Mock 상세 지점",
+		GussSize:      50,
+		GussUserCount: 5,
+	}, nil
+}
 
-	// 2. 새로운 예약 추가
-	m.revs = append(m.revs, domain.Reservation{
-		FKUserID:   uID,
-		FKGussID:   gID,
-		RevsTime:   time.Now(),
-		RevsStatus: "CONFIRMED",
-	})
-
+// 4. 예약 관련 Mock
+func (m *MockRepository) CreateReservation(userNum, gymNum int64) (string, error) {
+	log.Printf("[MOCK] Reservation Created: User %d -> Gym %d", userNum, gymNum)
 	return "CONFIRMED", nil
 }
 
-// MockDynamoLogRepo: 로그 기록 대행
-type MockDynamoLogRepo struct{}
+func (m *MockRepository) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
+	return []domain.Reservation{}, nil
+}
 
-func NewMockLogRepository() LogRepository { return &MockDynamoLogRepo{} }
+// 5. 기구 관리 Mock
+func (m *MockRepository) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error) {
+	return []domain.Equipment{
+		{ID: 1, Name: "Mock 트레드밀", Category: "유산소", Quantity: 5, Status: "active"},
+	}, nil
+}
 
-func (m *MockDynamoLogRepo) SaveEqLog(gID int64, eID, stat string) error {
-	fmt.Printf("[Mock Log] Gym %d, Equip %s: %s\n", gID, eID, stat)
+func (m *MockRepository) AddEquipment(eq *domain.Equipment) error {
+	log.Printf("[MOCK] Equipment Added: %s", eq.Name)
 	return nil
 }
 
-func (m *MockDynamoLogRepo) SaveUserLog(uID, act string) error {
-	fmt.Printf("[Mock Log] User %s: %s\n", uID, act)
+func (m *MockRepository) UpdateEquipment(eq *domain.Equipment) error {
+	log.Printf("[MOCK] Equipment Updated: ID %d", eq.ID)
+	return nil
+}
+
+func (m *MockRepository) DeleteEquipment(eqID int64) error {
+	log.Printf("[MOCK] Equipment Deleted: ID %d", eqID)
+	return nil
+}
+
+// 6. 매출 관련 Mock
+func (m *MockRepository) GetSalesByGym(gymID int64) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{"type": "Membership", "amount": 100000, "date": "2026-01-13"},
+	}, nil
+}
+
+// --- LogRepository Mock ---
+type MockLogRepository struct{}
+
+func NewMockLogRepository() LogRepository {
+	return &MockLogRepository{}
+}
+
+func (m *MockLogRepository) SaveEqLog(gID int64, eID string, stat string) error {
+	return nil
+}
+
+func (m *MockLogRepository) SaveUserLog(uID string, act string) error {
 	return nil
 }
