@@ -74,3 +74,11 @@ VALUES
 (1, '천국의 계단', '유산소', 2, 'active', '2025-01-10'),
 (1, '레그 프레스', '하체', 1, 'active', '2024-12-20'),
 (1, '덤벨 세트', '프리웨이트', 10, 'active', '2025-01-05');
+
+
+-- 예약 상태(확정/취소)와 실제 입장 여부를 위한 컬럼 추가
+ALTER TABLE reservations ADD COLUMN status VARCHAR(20) DEFAULT 'confirmed';
+ALTER TABLE reservations ADD COLUMN is_entered BOOLEAN DEFAULT FALSE;
+
+-- 기존 데이터가 있다면 'confirmed'로 초기화
+UPDATE reservations SET status = 'confirmed' WHERE status IS NULL;

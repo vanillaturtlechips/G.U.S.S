@@ -46,6 +46,8 @@ type Reservation struct {
 	RevsTime   time.Time `json:"revs_time"      db:"revs_time"`
 	RevsStatus string    `json:"revs_status"    db:"revs_status"`
 	UserName   string    `json:"user_name,omitempty"`
+	Status     string    `json:"status"`     // "confirmed", "cancelled"
+	IsEntered  bool      `json:"is_entered"` // 실시간 혼잡도 계산용
 }
 
 // 5. 관리자 정보 (admin_table)

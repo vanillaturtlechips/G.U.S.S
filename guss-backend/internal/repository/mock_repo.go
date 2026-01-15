@@ -1,109 +1,47 @@
 package repository
 
 import (
-	"database/sql"
 	"guss-backend/internal/domain"
-	"log"
+	"time"
 )
 
-type MockRepository struct{}
+// --- 일반 데이터용 Mock ---
+type mockRepo struct{}
 
 func NewMockRepository() Repository {
-	return &MockRepository{}
+	return &mockRepo{}
 }
 
-// 1. 유저 관련 Mock
-func (m *MockRepository) CreateUser(u *domain.User) error {
-	log.Printf("[MOCK] User Created: %v", u.UserName)
-	return nil
-}
-
-func (m *MockRepository) GetUserByID(id string) (*domain.User, error) {
-	// 일반 유저 테스트를 위한 Mock 데이터
-	return &domain.User{
-		UserNumber: 1,
-		UserID:     id,
-		UserName:   "Mock일반유저",
-		UserPW:     "$2a$10$Wp6S7Vf4X.0pGzXz9XyYduzI6.R8z8L5v5.m7Gz8z8z8z8z8z8z8z", // '1234'의 해시
-	}, nil
-}
-
-// 2. [추가] 관리자 관련 Mock (오류 해결 지점)
-func (m *MockRepository) GetAdminByID(id string) (*domain.Admin, error) {
-	return &domain.Admin{
-		AdminNumber: 1,
-		AdminID:     id,
-		AdminPW:     "$2a$10$7cQkLrgVQGuNCvYyONufFOwO3EwmBl1H.1lJ1y906WRBaNTH2t1Fe",
-		FKGussID:    sql.NullInt64{Int64: 1, Valid: true},
-	}, nil
-}
-
-// 3. 체육관 관련 Mock
-func (m *MockRepository) GetGyms() ([]domain.Gym, error) {
-	return []domain.Gym{
-		{GussNumber: 1, GussName: "Mock 강남점", GussStatus: "OPEN", GussSize: 50, GussUserCount: 10},
-	}, nil
-}
-
-func (m *MockRepository) GetGymDetail(id int64) (*domain.Gym, error) {
-	return &domain.Gym{
-		GussNumber:    id,
-		GussName:      "Mock 상세 지점",
-		GussSize:      50,
-		GussUserCount: 5,
-	}, nil
-}
-
-// 4. 예약 관련 Mock
-func (m *MockRepository) CreateReservation(userNum, gymNum int64) (string, error) {
-	log.Printf("[MOCK] Reservation Created: User %d -> Gym %d", userNum, gymNum)
-	return "CONFIRMED", nil
-}
-
-func (m *MockRepository) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
+func (m *mockRepo) GetUserByID(id string) (*domain.User, error)                      { return &domain.User{}, nil }
+func (m *mockRepo) GetAdminByID(id string) (*domain.Admin, error)                    { return &domain.Admin{}, nil }
+func (m *mockRepo) CreateUser(u *domain.User) error                                  { return nil }
+func (m *mockRepo) GetGyms() ([]domain.Gym, error)                                   { return []domain.Gym{}, nil }
+func (m *mockRepo) GetGymDetail(id int64) (*domain.Gym, error)                       { return &domain.Gym{}, nil }
+func (m *mockRepo) CreateReservation(userNum, gymNum int64) (string, error)          { return "SUCCESS", nil }
+func (m *mockRepo) CreateReservationWithTime(u int64, g int64, s, e time.Time) error { return nil }
+func (m *mockRepo) UpdateReservationStatus(r int64, u int64, s string) error         { return nil }
+func (m *mockRepo) GetReservationsByGym(id int64) ([]domain.Reservation, error) {
 	return []domain.Reservation{}, nil
 }
-
-// 5. 기구 관리 Mock
-func (m *MockRepository) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error) {
-	return []domain.Equipment{
-		{ID: 1, Name: "Mock 트레드밀", Category: "유산소", Quantity: 5, Status: "active"},
-	}, nil
+func (m *mockRepo) GetHourlyReservationStats(id int64) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{}, nil
+}
+func (m *mockRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
+	return []domain.Equipment{}, nil
+}
+func (m *mockRepo) AddEquipment(e *domain.Equipment) error    { return nil }
+func (m *mockRepo) UpdateEquipment(e *domain.Equipment) error { return nil }
+func (m *mockRepo) DeleteEquipment(id int64) error            { return nil }
+func (m *mockRepo) GetSalesByGym(id int64) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{}, nil
 }
 
-func (m *MockRepository) AddEquipment(eq *domain.Equipment) error {
-	log.Printf("[MOCK] Equipment Added: %s", eq.Name)
-	return nil
-}
-
-func (m *MockRepository) UpdateEquipment(eq *domain.Equipment) error {
-	log.Printf("[MOCK] Equipment Updated: ID %d", eq.ID)
-	return nil
-}
-
-func (m *MockRepository) DeleteEquipment(eqID int64) error {
-	log.Printf("[MOCK] Equipment Deleted: ID %d", eqID)
-	return nil
-}
-
-// 6. 매출 관련 Mock
-func (m *MockRepository) GetSalesByGym(gymID int64) ([]map[string]interface{}, error) {
-	return []map[string]interface{}{
-		{"type": "Membership", "amount": 100000, "date": "2026-01-13"},
-	}, nil
-}
-
-// --- LogRepository Mock ---
-type MockLogRepository struct{}
+// --- 로그용 Mock (오류 해결 핵심 포인트) ---
+type mockLogRepo struct{}
 
 func NewMockLogRepository() LogRepository {
-	return &MockLogRepository{}
+	return &mockLogRepo{}
 }
 
-func (m *MockLogRepository) SaveEqLog(gID int64, eID string, stat string) error {
-	return nil
-}
-
-func (m *MockLogRepository) SaveUserLog(uID string, act string) error {
-	return nil
-}
+// 만약 LogRepository 인터페이스에 메서드가 정의되어 있다면 여기에 빈 메서드를 추가해야 합니다.
+// 현재 repository.go 기준으로는 빈 인터페이스이므로 이대로면 컴파일 에러가 사라집니다.

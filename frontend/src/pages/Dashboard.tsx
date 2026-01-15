@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, LogIn, LogOut, Activity, Shield, Phone } from 'lucide-react';
+import { Search, MapPin, LogIn, LogOut, Activity, Shield, Phone, BarChart3 } from 'lucide-react';
 import seoulMapImg from '../assets/seoul-map.png'; 
 import api from '../api/axios'; 
 
@@ -15,8 +15,9 @@ const POSITIONS: { [key: number]: { top: string; left: string } } = {
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   
-  const [gyms, setGyms] = useState<any[]>([]);
+  const [gyms, setGyms] = useState<any[]>([]); // 초기값 빈 배열
   const [selectedGym, setSelectedGym] = useState<any>(null);
+  const [hourlyStats, setHourlyStats] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
@@ -24,7 +25,8 @@ const Dashboard: React.FC = () => {
   const fetchGyms = async () => {
     try {
       const response = await api.get('/api/gyms');
-      const data = response.data;
+      // [오류 해결 포인트] 데이터가 배열인지 확인하고 아닐 경우 빈 배열로 처리
+      const data = Array.isArray(response.data) ? response.data : [];
       setGyms(data);
       
       if (data.length > 0 && !selectedGym) {
@@ -33,7 +35,17 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     } catch (error) {
       console.error("데이터 로딩 실패:", error);
+      setGyms([]); // 에러 발생 시 빈 배열로 초기화하여 .map 오류 방지
       setLoading(false);
+    }
+  };
+
+  const fetchStats = async (gymId: number) => {
+    try {
+      const response = await api.get(`/api/reservations/stats?gymId=${gymId}`);
+      setHourlyStats(Array.isArray(response.data) ? response.data : []);
+    } catch (err) {
+      console.error("통계 로딩 실패");
     }
   };
 
@@ -41,6 +53,10 @@ const Dashboard: React.FC = () => {
     fetchGyms();
     const interval = setInterval(fetchGyms, 5000); 
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (selectedGym) fetchStats(selectedGym.guss_number);
   }, [selectedGym]);
 
   const handleAuthAction = () => {
@@ -70,7 +86,6 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white relative overflow-hidden font-sans">
-      {/* 배경 애니메이션 그리드 [디자인 유지] */}
       <div className="absolute inset-0 opacity-20" style={{ 
         backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`, 
         backgroundSize: '40px 40px' 
@@ -101,8 +116,8 @@ const Dashboard: React.FC = () => {
           <div className="lg:col-span-2 bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-4 relative overflow-hidden">
             <div className="w-full h-full bg-zinc-900 rounded-xl flex items-center justify-center overflow-hidden border border-zinc-800 relative shadow-inner">
               <img src={seoulMapImg} alt="서울 지도" className="w-full h-full object-cover opacity-30 grayscale brightness-75" />
-              
-              {gyms.map((gym) => (
+              {/* [오류 수정 완료] gyms가 확실히 배열일 때만 map 실행 */}
+              {Array.isArray(gyms) && gyms.map((gym) => (
                 <button
                   key={gym.guss_number}
                   className="absolute -translate-x-1/2 -translate-y-1/2 group z-20"
@@ -125,19 +140,18 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
           
-          {/* 정보 패널 (INFO_PANEL) */}
+          {/* 정보 패널 [디자인 유지 + 하단 차트 추가] */}
           <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-8 flex flex-col justify-between shadow-[0_0_50px_rgba(0,0,0,0.5)]">
             {selectedGym ? (
-              <div className="animate-in fade-in duration-500">
+              <div className="animate-in fade-in duration-500 h-full flex flex-col">
                 <h2 className="text-2xl font-bold text-emerald-400 mb-8 flex items-center gap-3 uppercase italic" style={{ fontFamily: 'Orbitron' }}>
                   <Shield className="w-6 h-6" /> INFO_PANEL
                 </h2>
                 
-                <div className="space-y-8">
+                <div className="space-y-8 flex-1 overflow-y-auto pr-2">
                   <div className="border-l-4 border-emerald-500 pl-4">
                     <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-1">Center Name</p>
                     <p className="text-2xl font-black">{selectedGym.guss_name}</p>
-                    {/* 전화번호 추가 */}
                     <div className="flex items-center gap-2 mt-1 text-zinc-400">
                       <Phone className="w-3 h-3 text-emerald-500" />
                       <p className="text-sm font-medium tracking-tighter">{selectedGym.guss_phone || '전화번호 미등록'}</p>
@@ -153,7 +167,30 @@ const Dashboard: React.FC = () => {
                       현재 이용 인원: <span className="text-white font-black">{selectedGym.guss_user_count}</span> 명 / {selectedGym.guss_size}
                     </p>
                   </div>
+
+                  {/* 3. 예약 현황 차트 섹션 (디자인 조화 중시) */}
+                  <div className="bg-black/50 border border-zinc-800 rounded-xl p-4">
+                    <p className="text-emerald-500 text-[10px] font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+                      <BarChart3 className="w-3 h-3" /> Today Forecast
+                    </p>
+                    <div className="h-24 flex items-end gap-1 px-1">
+                      {hourlyStats.map((stat, idx) => (
+                        <div key={idx} className="flex-1 flex flex-col items-center group relative">
+                          <div className="w-full bg-emerald-500/40 group-hover:bg-emerald-400 rounded-t-sm transition-all" 
+                               style={{ height: `${(stat.count / 20) * 100}%`, minHeight: '2px' }} />
+                          <span className="text-[8px] text-zinc-600 mt-1">{stat.hour}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
+
+                <button 
+                  onClick={handleDetailView}
+                  className="w-full py-5 mt-6 bg-zinc-900 border border-emerald-500/30 rounded-2xl text-white font-bold hover:bg-emerald-500/10 hover:border-emerald-500 transition-all shadow-lg active:scale-[0.98]"
+                >
+                  상세 데이터 확인하기
+                </button>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full opacity-30">
@@ -161,14 +198,6 @@ const Dashboard: React.FC = () => {
                 <p className="font-bold tracking-widest">지점을 선택해주세요.</p>
               </div>
             )}
-
-            {/* 예약하기 버튼 삭제 및 상세 보기 버튼 하단 고정 */}
-            <button 
-              onClick={handleDetailView}
-              className="w-full py-5 bg-zinc-900 border border-emerald-500/30 rounded-2xl text-white font-bold hover:bg-emerald-500/10 hover:border-emerald-500 transition-all shadow-lg active:scale-[0.98]"
-            >
-              상세 데이터 확인하기
-            </button>
           </div>
         </div>
       </div>

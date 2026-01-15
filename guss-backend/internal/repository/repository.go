@@ -1,33 +1,32 @@
 package repository
 
-import "guss-backend/internal/domain"
+import (
+	"guss-backend/internal/domain"
+	"time"
+)
 
 type Repository interface {
-	// User 관련
-	CreateUser(u *domain.User) error
 	GetUserByID(id string) (*domain.User, error)
+	GetAdminByID(id string) (*domain.Admin, error)
+	CreateUser(u *domain.User) error
 
-	// Gym 관련 (GetGyms로 이름 변경하여 핸들러와 통일)
 	GetGyms() ([]domain.Gym, error)
 	GetGymDetail(id int64) (*domain.Gym, error)
 
-	// Reservation 관련
 	CreateReservation(userNum, gymNum int64) (string, error)
+	CreateReservationWithTime(userNum int64, gymID int64, start, end time.Time) error
+	UpdateReservationStatus(resID int64, userNum int64, status string) error
 	GetReservationsByGym(gymID int64) ([]domain.Reservation, error)
+	GetHourlyReservationStats(gymID int64) ([]map[string]interface{}, error)
 
-	GetAdminByID(id string) (*domain.Admin, error)
-
-	// Equipment 관련 (메서드 명칭 통일)
-	GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error)
-	AddEquipment(eq *domain.Equipment) error // domain 객체를 받도록 설정
+	GetEquipmentsByGymID(id int64) ([]domain.Equipment, error)
+	AddEquipment(eq *domain.Equipment) error
 	UpdateEquipment(eq *domain.Equipment) error
-	DeleteEquipment(eqID int64) error
+	DeleteEquipment(id int64) error
 
-	// 매출 관련
-	GetSalesByGym(gymID int64) ([]map[string]interface{}, error)
+	GetSalesByGym(id int64) ([]map[string]interface{}, error)
 }
 
 type LogRepository interface {
-	SaveEqLog(gID int64, eID string, stat string) error
-	SaveUserLog(uID string, act string) error
+	// 로그 관련 로직 필요 시 추가
 }

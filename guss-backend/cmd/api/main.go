@@ -107,11 +107,11 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/reserve", server.AuthMiddleware(http.HandlerFunc(server.HandleReserve)))
-	
+
 	adminHandler := http.HandlerFunc(server.HandleDashboard)
 	mux.Handle("/admin/dashboard", server.AuthMiddleware(server.AdminMiddleware(adminHandler)))
 	mux.Handle("/admin/sales", server.AuthMiddleware(server.AdminMiddleware(http.HandlerFunc(server.HandleGetSales))))
-	
+
 	registerRoutes(mux, server)
 
 	srv := &http.Server{
@@ -172,6 +172,8 @@ func registerRoutes(mux *http.ServeMux, s *api.Server) {
 	mux.HandleFunc("/api/gyms", s.HandleGetGyms)
 	mux.HandleFunc("/api/gyms/", s.HandleGetGymDetail)
 	mux.Handle("/api/reserve", s.AuthMiddleware(http.HandlerFunc(s.HandleReserve)))
+	mux.HandleFunc("/api/reservations/stats", s.HandleGetReservationStats)
+	mux.Handle("/api/reservations/cancel/", s.AuthMiddleware(http.HandlerFunc(s.HandleCancelReservation)))
 
 	mux.HandleFunc("/api/dashboard", s.HandleDashboard)
 
