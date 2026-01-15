@@ -36,7 +36,7 @@ export default function AdminPage() {
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const API_BASE = "http://localhost:9000/api"; 
+  const API_BASE = "/api"; 
   const token = localStorage.getItem('token');
 
   useEffect(() => { fetchGyms(); }, []);

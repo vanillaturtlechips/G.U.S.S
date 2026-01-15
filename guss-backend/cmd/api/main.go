@@ -70,7 +70,7 @@ func (m *mockResponseWriter) WriteHeader(code int) {
 func main() {
 	port := flag.String("port", "9000", "API 서버 포트")
 	useMock := flag.Bool("mock", false, "Mock 데이터 사용 여부")
-	mysqlDSN := flag.String("dsn", "guss_user:1234@tcp(127.0.0.1:3306)/guss", "MySQL 연결 정보")
+	mysqlDSN := flag.String("dsn", "guss_user:1234@tcp(guss-prd-rds-2a.cbsocuc4ser6.ap-northeast-2.rds.amazonaws.com:3306)/guss", "MySQL 연결 정보")
 	maxConn := flag.Int("max_conn", 1000, "최대 동시 연결 수")
 	flag.Parse()
 
