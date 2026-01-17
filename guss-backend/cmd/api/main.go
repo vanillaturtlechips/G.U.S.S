@@ -72,6 +72,9 @@ func main() {
 	useMock := flag.Bool("mock", false, "Mock 데이터 사용 여부")
 	mysqlDSN := flag.String("dsn", "guss_user:1234@tcp(guss-prd-rds-2a.cbsocuc4ser6.ap-northeast-2.rds.amazonaws.com:3306)/guss", "MySQL 연결 정보")
 	maxConn := flag.Int("max_conn", 1000, "최대 동시 연결 수")
+
+	sqsURL := flag.String("sqs_url", "", "AWS SQS FIFO Queue URL")
+
 	flag.Parse()
 
 	var repo repository.Repository
@@ -103,15 +106,16 @@ func main() {
 		Repo:    repo,
 		LogRepo: logRepo,
 		Algo:    &algo.RealTimeCalculator{},
+		SQSURL:  *sqsURL,
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/reserve", server.AuthMiddleware(http.HandlerFunc(server.HandleReserve)))
-	
+
 	adminHandler := http.HandlerFunc(server.HandleDashboard)
 	mux.Handle("/admin/dashboard", server.AuthMiddleware(server.AdminMiddleware(adminHandler)))
 	mux.Handle("/admin/sales", server.AuthMiddleware(server.AdminMiddleware(http.HandlerFunc(server.HandleGetSales))))
-	
+
 	registerRoutes(mux, server)
 
 	srv := &http.Server{
@@ -174,6 +178,7 @@ func registerRoutes(mux *http.ServeMux, s *api.Server) {
 	mux.Handle("/api/reserve", s.AuthMiddleware(http.HandlerFunc(s.HandleReserve)))
 
 	mux.HandleFunc("/api/dashboard", s.HandleDashboard)
+	mux.Handle("/api/checkin", s.AuthMiddleware(http.HandlerFunc(s.HandleCheckIn)))
 
 	// 기구 관련 라우트 통합 처리
 	mux.HandleFunc("/api/equipments", func(w http.ResponseWriter, r *http.Request) {

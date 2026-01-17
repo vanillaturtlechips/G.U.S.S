@@ -1,24 +1,39 @@
 package api // 1. 패키지 선언 누락 해결
 
 import (
-	"fmt"
+	"encoding/json"
+	"guss-backend/internal/auth"
 	"guss-backend/internal/infrastructure/aws" // 2. SendCheckInEvent를 쓰기 위한 임포트
-	"log"
+	"net/http"
 )
 
-// HandleQRCheckIn: QR 스캔 시 호출되는 메인 로직
-func HandleQRCheckIn(resID int64, gymID int64, userID string) error {
-	// 1. 예약 유효성 검사 (실제 구현 시 SQL DB 조회 로직 추가)
-	log.Printf("[CHECKIN] QR 스캔됨: 예약번호 %d, 유저 %s", resID, userID)
-
-	// 2. [실시간 파이프라인] SQS로 체크인 이벤트 전송
-	// 이전에 만든 infrastructure/aws 패키지의 함수를 호출합니다.
-	err := aws.SendCheckInEvent(gymID, userID, "IN")
-	if err != nil {
-		log.Printf("[ERROR] SQS 전송 실패: %v", err)
-		return fmt.Errorf("실시간 혼잡도 업데이트 실패: %v", err)
+func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ReservationID int64 `json:"reservation_id"`
+		GymID         int64 `json:"gym_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorJSON(w, "잘못된 요청 양식입니다.", http.StatusBadRequest)
+		return
 	}
 
-	log.Printf("[SUCCESS] 체크인 완료 및 실시간 데이터 전송: 유저 %s", userID)
-	return nil
+	// 토큰에서 인증된 Claims 추출
+	claims, ok := r.Context().Value(UserContextKey).(*auth.Claims)
+	if !ok {
+		s.errorJSON(w, "인증 정보를 찾을 수 없습니다.", http.StatusUnauthorized)
+		return
+	}
+
+	// [수정 포인트] s.SQSURL을 첫 번째 인자로 추가하여 want (string, int64, string, string) 형식을 맞춥니다.
+	err := aws.SendCheckInEvent(s.SQSURL, req.GymID, claims.UserID, "IN")
+	if err != nil {
+		s.errorJSON(w, "실시간 혼잡도 반영 실패", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "체크인 성공! 실시간 혼잡도가 업데이트됩니다.",
+	})
 }

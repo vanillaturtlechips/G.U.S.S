@@ -2,15 +2,15 @@ package api
 
 import (
 	"encoding/json"
-	"guss-backend/internal/algo"
-	"guss-backend/internal/auth"
-	"guss-backend/internal/domain"
-	"guss-backend/internal/infrastructure/aws"
-	"guss-backend/internal/repository"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"guss-backend/internal/algo"
+	"guss-backend/internal/auth"
+	"guss-backend/internal/domain"
+	"guss-backend/internal/repository"
 )
 
 type contextKey string
@@ -21,6 +21,7 @@ type Server struct {
 	Repo    repository.Repository
 	LogRepo repository.LogRepository
 	Algo    any
+	SQSURL  string // [추가] 환경별 SQS FIFO 큐 주소
 }
 
 func (s *Server) errorJSON(w http.ResponseWriter, message string, code int) {
@@ -34,7 +35,10 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		UserID string `json:"user_id"`
 		UserPW string `json:"user_pw"`
 	}
-	json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		s.errorJSON(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
 
 	var userNumber int64
 	var userName string
@@ -53,7 +57,7 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	} else {
 		admin, err := s.Repo.GetAdminByID(input.UserID)
 		if err != nil {
-			s.errorJSON(w, "인증 실패", 401)
+			s.errorJSON(w, "인증 실패", http.StatusUnauthorized)
 			return
 		}
 		userNumber = admin.AdminNumber
@@ -66,12 +70,18 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !auth.CheckPasswordHash(input.UserPW, hashedPassword) {
-		s.errorJSON(w, "비밀번호 불일치", 401)
+		s.errorJSON(w, "비밀번호 불일치", http.StatusUnauthorized)
 		return
 	}
 
 	token, _ := auth.GenerateToken(userNumber, input.UserID, role)
-	json.NewEncoder(w).Encode(map[string]interface{}{"token": token, "user_role": role, "gym_id": gymID, "user_name": userName, "status": "success"})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":     token,
+		"user_role": role,
+		"gym_id":    gymID,
+		"user_name": userName,
+		"status":    "success",
+	})
 }
 
 func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +93,7 @@ func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		GymID        int64  `json:"gym_id"`
-		FkGussNumber int64  `json:"fk_guss_number"` // 프론트 필드명 호환
+		FkGussNumber int64  `json:"fk_guss_number"`
 		VisitTime    string `json:"visit_time"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
@@ -95,14 +105,14 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 
 	t, err := time.Parse("2006-01-02 15:04:05", req.VisitTime)
 	if err != nil || (t.Minute() != 0 && t.Minute() != 30) {
-		s.errorJSON(w, "30분 단위로만 예약 가능합니다", 400)
+		s.errorJSON(w, "30분 단위로만 예약 가능합니다", http.StatusBadRequest)
 		return
 	}
 
 	claims := r.Context().Value(UserContextKey).(*auth.Claims)
 	_, err = s.Repo.CreateReservation(claims.UserNumber, targetID, t)
 	if err != nil {
-		s.errorJSON(w, err.Error(), 400)
+		s.errorJSON(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
@@ -116,19 +126,18 @@ func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request)
 	claims := r.Context().Value(UserContextKey).(*auth.Claims)
 	err := s.Repo.CancelReservation(req.RevsNumber, claims.UserNumber, claims.Role)
 	if err != nil {
-		s.errorJSON(w, err.Error(), 400)
+		s.errorJSON(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// 나머지 핸들러 (GetGymDetail, Register 등)는 기존 로직을 유지하면서 s.Repo의 바뀐 인터페이스에 맞춰 호출합니다.
 func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
 	gym, err := s.Repo.GetGymDetail(id)
 	if err != nil {
-		s.errorJSON(w, "지점 정보 없음", 404)
+		s.errorJSON(w, "지점 정보 없음", http.StatusNotFound)
 		return
 	}
 	calc := s.Algo.(*algo.RealTimeCalculator)
@@ -142,7 +151,7 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	hashed, _ := auth.HashPassword(u.UserPW)
 	u.UserPW = hashed
 	if err := s.Repo.CreateUser(&u); err != nil {
-		s.errorJSON(w, "가입 실패", 500)
+		s.errorJSON(w, "가입 실패", http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
@@ -187,31 +196,4 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode([]map[string]interface{}{{"type": "일일권", "amount": 10000, "date": time.Now().Format("2006-01-02")}})
-}
-
-func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		ReservationID int64 `json:"reservation_id"`
-		GymID         int64 `json:"gym_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorJSON(w, "잘못된 요청 양식입니다.", http.StatusBadRequest)
-		return
-	}
-
-	// [중요] 토큰에서 사용자 정보를 가져와서 실제 ID를 넘깁니다.
-	claims := r.Context().Value(UserContextKey).(*auth.Claims)
-
-	// SQS로 실시간 이벤트 전송 트리거
-	err := aws.SendCheckInEvent(req.GymID, claims.UserID, "IN")
-	if err != nil {
-		s.errorJSON(w, "실시간 혼잡도 반영 실패", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "success",
-		"message": "체크인 성공! 실시간 혼잡도가 업데이트됩니다.",
-	})
 }
