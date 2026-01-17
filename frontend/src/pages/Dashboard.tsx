@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Search, MapPin, LogIn, LogOut, Activity, Shield, Phone } from 'lucide-react';
 import seoulMapImg from '../assets/seoul-map.png'; 
 import api from '../api/axios'; 
+// [추가] 차트 컴포넌트 임포트
+import CongestionChart from '../components/charts/CongestionChart';
 
 const POSITIONS: { [key: number]: { top: string; left: string } } = {
   1: { top: '78%', left: '68%' }, 
@@ -18,12 +20,14 @@ const Dashboard: React.FC = () => {
   const [gyms, setGyms] = useState<any[]>([]);
   const [selectedGym, setSelectedGym] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
-  const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  const [searchKeyword, setSearchKeyword] = useState('');
 
-  const fetchGyms = async () => {
+  const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  const userRole = localStorage.getItem('userRole');
+
+  const fetchGyms = async (keyword = '') => {
     try {
-      const response = await api.get('/api/gyms');
+      const response = await api.get(`/api/gyms?search=${keyword}`);
       const data = response.data;
       setGyms(data);
       
@@ -38,18 +42,26 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchGyms();
-    const interval = setInterval(fetchGyms, 5000); 
+    fetchGyms(searchKeyword);
+    const interval = setInterval(() => fetchGyms(searchKeyword), 5000); 
     return () => clearInterval(interval);
-  }, [selectedGym]);
+  }, [selectedGym, searchKeyword]);
 
   const handleAuthAction = () => {
     if (isLoggedIn) {
       localStorage.removeItem('token');
       localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('userName');
       window.location.reload(); 
     } else {
       navigate('/login');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      fetchGyms(searchKeyword);
     }
   };
 
@@ -70,34 +82,56 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white relative overflow-hidden font-sans">
-      {/* 배경 애니메이션 그리드 [디자인 유지] */}
+      {/* 배경 그리드 [디자인 유지] */}
       <div className="absolute inset-0 opacity-20" style={{ 
         backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`, 
         backgroundSize: '40px 40px' 
       }} />
 
       <div className="relative z-10 p-6 max-w-7xl mx-auto h-screen flex flex-col">
-        {/* 상단 바 [디자인 유지] */}
+        {/* 상단 네비게이션 바 */}
         <div className="bg-zinc-950/80 backdrop-blur-sm border-2 border-emerald-500/30 rounded-3xl p-6 mb-8 flex justify-between items-center shadow-[0_0_30px_rgba(16,185,129,0.1)]">
           <div className="flex items-center gap-4 flex-1">
-            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-lime-400" 
-                style={{ fontFamily: 'Orbitron, sans-serif' }}>GUSS MAP</h1>
+            <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-lime-400 cursor-pointer" 
+                style={{ fontFamily: 'Orbitron, sans-serif' }}
+                onClick={() => {setSearchKeyword(''); fetchGyms('');}}>
+              GUSS MAP
+            </h1>
             <div className="relative flex-1 max-w-md ml-4">
               <Search className="absolute left-3 top-3 w-5 h-5 text-zinc-500" />
-              <input type="text" className="w-full bg-black border-2 border-zinc-800 focus:border-emerald-500 rounded-xl px-10 py-2 text-white outline-none transition-all" placeholder="주변 헬스장 검색..." />
+              <input 
+                type="text" 
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="w-full bg-black border-2 border-zinc-800 focus:border-emerald-500 rounded-xl px-10 py-2 text-white outline-none transition-all" 
+                placeholder="지점명을 검색하고 엔터를 누르세요..." 
+              />
             </div>
           </div>
-          <button 
-            onClick={handleAuthAction} 
-            className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-bold hover:scale-105 transition-all flex items-center gap-2"
-          >
-            {isLoggedIn ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
-            {isLoggedIn ? 'LOGOUT' : 'LOGIN'}
-          </button>
+
+          <div className="flex items-center gap-3">
+            {isLoggedIn && userRole === 'ADMIN' && (
+              <button 
+                onClick={() => navigate('/admin')}
+                className="px-6 py-2 bg-purple-600/20 border-2 border-purple-500/50 rounded-xl text-purple-400 font-bold hover:bg-purple-500 hover:text-white transition-all shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+              >
+                ADMIN PAGE
+              </button>
+            )}
+            
+            <button 
+              onClick={handleAuthAction} 
+              className="px-6 py-2 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-xl text-black font-bold hover:scale-105 transition-all flex items-center gap-2"
+            >
+              {isLoggedIn ? <LogOut className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+              {isLoggedIn ? 'LOGOUT' : 'LOGIN'}
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-8 overflow-hidden mb-4">
-          {/* 지도 섹션 [디자인 유지] */}
+          {/* 지도 섹션 */}
           <div className="lg:col-span-2 bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-4 relative overflow-hidden">
             <div className="w-full h-full bg-zinc-900 rounded-xl flex items-center justify-center overflow-hidden border border-zinc-800 relative shadow-inner">
               <img src={seoulMapImg} alt="서울 지도" className="w-full h-full object-cover opacity-30 grayscale brightness-75" />
@@ -125,19 +159,18 @@ const Dashboard: React.FC = () => {
             </div>
           </div>
           
-          {/* 정보 패널 (INFO_PANEL) */}
+          {/* 우측 정보 패널 */}
           <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-8 flex flex-col justify-between shadow-[0_0_50px_rgba(0,0,0,0.5)]">
             {selectedGym ? (
-              <div className="animate-in fade-in duration-500">
+              <div className="animate-in fade-in duration-500 h-full flex flex-col">
                 <h2 className="text-2xl font-bold text-emerald-400 mb-8 flex items-center gap-3 uppercase italic" style={{ fontFamily: 'Orbitron' }}>
                   <Shield className="w-6 h-6" /> INFO_PANEL
                 </h2>
                 
-                <div className="space-y-8">
+                <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
                   <div className="border-l-4 border-emerald-500 pl-4">
                     <p className="text-zinc-500 text-[10px] uppercase tracking-widest mb-1">Center Name</p>
                     <p className="text-2xl font-black">{selectedGym.guss_name}</p>
-                    {/* 전화번호 추가 */}
                     <div className="flex items-center gap-2 mt-1 text-zinc-400">
                       <Phone className="w-3 h-3 text-emerald-500" />
                       <p className="text-sm font-medium tracking-tighter">{selectedGym.guss_phone || '전화번호 미등록'}</p>
@@ -149,9 +182,14 @@ const Dashboard: React.FC = () => {
                     <p className="text-emerald-400 font-bold flex items-center gap-2 uppercase italic">
                       <Activity className="w-4 h-4 animate-pulse" /> {selectedGym.guss_status}
                     </p>
-                    <p className="text-zinc-400 mt-2">
-                      현재 이용 인원: <span className="text-white font-black">{selectedGym.guss_user_count}</span> 명 / {selectedGym.guss_size}
+                    <p className="text-zinc-400 mt-2 text-sm">
+                      현재 이용 인원: <span className="text-white font-black text-lg">{selectedGym.guss_user_count}</span> 명 / {selectedGym.guss_size}
                     </p>
+
+                    {/* [디자인 통합] 실시간 혼잡도 차트 추가 */}
+                    <div className="mt-4 w-full h-40 bg-black/40 rounded-xl border border-zinc-800/50 p-2">
+                      <CongestionChart gymId={selectedGym.guss_number} color="#10b981" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -162,12 +200,12 @@ const Dashboard: React.FC = () => {
               </div>
             )}
 
-            {/* 예약하기 버튼 삭제 및 상세 보기 버튼 하단 고정 */}
             <button 
               onClick={handleDetailView}
-              className="w-full py-5 bg-zinc-900 border border-emerald-500/30 rounded-2xl text-white font-bold hover:bg-emerald-500/10 hover:border-emerald-500 transition-all shadow-lg active:scale-[0.98]"
+              className="w-full py-5 mt-6 bg-zinc-900 border border-emerald-500/30 rounded-2xl text-white font-bold hover:bg-emerald-500/10 hover:border-emerald-500 transition-all shadow-lg active:scale-[0.98] uppercase tracking-[0.2em]"
+              style={{ fontFamily: 'Orbitron' }}
             >
-              상세 데이터 확인하기
+              Check Details
             </button>
           </div>
         </div>

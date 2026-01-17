@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import api from '../api/axios';
 import StatusModal from './StatusModal';
+// QR 생성을 위한 라이브러리 추가
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function GussPage() {
   const [searchParams] = useSearchParams();
@@ -14,8 +16,12 @@ export default function GussPage() {
 
   const [gymData, setGymData] = useState<any>(null);
   const [showReservationModal, setShowReservationModal] = useState(false);
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedTime, setSelectedTime] = useState(''); 
   
+  // QR 코드 표시를 위한 상태 추가
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrValue, setQrValue] = useState("");
+
   const [statusModal, setStatusModal] = useState({
     isOpen: false,
     type: 'SUCCESS' as 'SUCCESS' | 'ERROR' | 'WAITING' | 'AUTH',
@@ -24,6 +30,12 @@ export default function GussPage() {
   });
 
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+
+  const timeSlots = Array.from({ length: 48 }, (_, i) => {
+    const h = Math.floor(i / 2).toString().padStart(2, '0');
+    const m = (i % 2 === 0 ? '00' : '30');
+    return `${h}:${m}`;
+  });
 
   const fetchDetail = async () => {
     if (!gymId) return;
@@ -61,8 +73,12 @@ export default function GussPage() {
     }
 
     try {
+      const today = new Date().toISOString().split('T')[0];
+      const visit_time = `${today} ${selectedTime}:00`;
+
       const response = await api.post('/api/reserve', {
-        fk_guss_number: parseInt(gymId || '0')
+        fk_guss_number: parseInt(gymId || '0'),
+        visit_time: visit_time 
       });
       
       setShowReservationModal(false);
@@ -82,18 +98,22 @@ export default function GussPage() {
           message: '현재 정원이 가득 찼습니다.\n대기 명단에 등록되었습니다.'
         });
       } else {
-        setStatusModal({
-          isOpen: true,
-          type: 'SUCCESS',
-          title: 'RESERVE OK',
-          message: `🎉 예약이 완료되었습니다!\n방문 시간: ${selectedTime}`
+        // 예약 성공 시 QR 코드 데이터 설정 및 모달 오픈
+        // 유저 ID와 헬스장 ID, 시간을 포함한 데이터 생성
+        const data = JSON.stringify({
+          gym_id: gymId,
+          time: selectedTime,
+          type: "ENTRY"
         });
+        setQrValue(data);
+        setShowQRModal(true);
       }
       
       fetchDetail();
     } catch (error: any) {
       setShowReservationModal(false);
-      setStatusModal({ isOpen: true, type: 'ERROR', title: 'FAILED', message: '예약 중 서버 오류가 발생했습니다.' });
+      const errMsg = error.response?.data?.error || '예약 중 서버 오류가 발생했습니다.';
+      setStatusModal({ isOpen: true, type: 'ERROR', title: 'FAILED', message: errMsg });
     }
   };
 
@@ -180,9 +200,9 @@ export default function GussPage() {
                 <Shield className="text-emerald-400" /> 시설 이용 안내
               </h2>
               <ul className="space-y-4 text-zinc-400">
-                <li className="flex items-center gap-3"><Heart className="w-4 h-4 text-emerald-500"/> 유산소 존: 트레드밀 {gym?.guss_ma_count}대 가동 중 ({gym?.guss_ma_type})</li>
-                <li className="flex items-center gap-3"><Target className="w-4 h-4 text-emerald-500"/> 기구 상태: {gym?.guss_ma_state}</li>
-                <li className="flex items-center gap-3"><Clock className="w-4 h-4 text-emerald-500"/> 예약 취소는 1시간 전까지만 가능</li>
+                <li className="flex items-center gap-3"><Heart className="w-4 h-4 text-emerald-500"/> 유산소 존: 트레드밀 {gym?.guss_ma_count}대 운용 중</li>
+                <li className="flex items-center gap-3"><Target className="w-4 h-4 text-emerald-500"/> 기구 상태: {gym?.guss_ma_state || '양호'}</li>
+                <li className="flex items-center gap-3"><Clock className="w-4 h-4 text-emerald-500"/> 예약 취소는 방문 1시간 전까지만 가능합니다.</li>
               </ul>
             </div>
             
@@ -200,23 +220,61 @@ export default function GussPage() {
 
       {showReservationModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl">
+          <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in zoom-in duration-300">
             <h3 className="text-2xl font-black text-emerald-400 mb-6 text-center italic" style={{ fontFamily: 'Orbitron' }}>방문 예정 시간</h3>
             <div className="space-y-6">
-              <select 
-                value={selectedTime}
-                onChange={(e) => setSelectedTime(e.target.value)}
-                className="w-full bg-black border-2 border-zinc-800 rounded-xl p-4 text-white focus:border-emerald-500 outline-none appearance-none font-bold"
-              >
-                <option value="">시간대를 선택하세요</option>
-                <option value="10:00">10:00 AM</option>
-                <option value="14:00">02:00 PM</option>
-                <option value="19:00">07:00 PM</option>
-              </select>
+              <div className="relative">
+                <select 
+                  value={selectedTime}
+                  onChange={(e) => setSelectedTime(e.target.value)}
+                  className="w-full bg-black border-2 border-zinc-800 rounded-xl p-4 text-white focus:border-emerald-500 outline-none appearance-none font-bold custom-scrollbar"
+                >
+                  <option value="">시간대를 선택하세요</option>
+                  {timeSlots.map(slot => (
+                    <option key={slot} value={slot}>
+                      {slot} {parseInt(slot.split(':')[0]) < 12 ? 'AM' : 'PM'}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-500">
+                  <Clock size={20} />
+                </div>
+              </div>
+
               <div className="flex gap-4">
                 <button onClick={() => setShowReservationModal(false)} className="flex-1 py-4 bg-zinc-900 rounded-xl font-bold hover:bg-zinc-800 transition-all text-zinc-500">취소</button>
-                <button onClick={handleReservationConfirm} className="flex-1 py-4 bg-emerald-500 text-black rounded-xl font-black hover:bg-emerald-400 transition-all">예약 완료</button>
+                <button onClick={handleReservationConfirm} className="flex-1 py-4 bg-emerald-500 text-black rounded-xl font-black hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">예약 완료</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 예약 성공 시 나타나는 QR 코드 모달 - 디자인 유지 */}
+      {showQRModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-zinc-950 border-2 border-emerald-500/50 rounded-3xl p-8 relative shadow-[0_0_50px_rgba(16,185,129,0.1)]">
+            <div className="text-center">
+              <div className="text-emerald-400 w-16 h-16 mx-auto mb-6 flex items-center justify-center">
+                <Shield size={48} />
+              </div>
+              <h3 className="text-2xl font-black mb-2 tracking-tighter uppercase text-emerald-400" style={{ fontFamily: 'Orbitron' }}>
+                RESERVE_SUCCESS
+              </h3>
+              <p className="text-zinc-400 font-medium leading-relaxed mb-6">
+                예약이 완료되었습니다. <br/> 아래 QR 코드를 센터 입구에서 스캔하세요.
+              </p>
+              
+              <div className="bg-white p-4 rounded-xl inline-block mb-8">
+                <QRCodeSVG value={qrValue} size={180} />
+              </div>
+
+              <button 
+                onClick={() => setShowQRModal(false)}
+                className="w-full py-4 bg-zinc-900 border border-emerald-500/30 rounded-xl text-white font-black hover:bg-emerald-500/10 transition-all"
+              >
+                CONFIRM
+              </button>
             </div>
           </div>
         </div>

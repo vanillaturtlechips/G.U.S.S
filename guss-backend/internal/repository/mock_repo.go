@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"guss-backend/internal/domain"
 	"log"
+	"time"
 )
 
+// --- MockRepository ---
 type MockRepository struct{}
 
 func NewMockRepository() Repository {
@@ -19,16 +21,15 @@ func (m *MockRepository) CreateUser(u *domain.User) error {
 }
 
 func (m *MockRepository) GetUserByID(id string) (*domain.User, error) {
-	// 일반 유저 테스트를 위한 Mock 데이터
 	return &domain.User{
 		UserNumber: 1,
 		UserID:     id,
 		UserName:   "Mock일반유저",
-		UserPW:     "$2a$10$Wp6S7Vf4X.0pGzXz9XyYduzI6.R8z8L5v5.m7Gz8z8z8z8z8z8z8z", // '1234'의 해시
+		UserPW:     "$2a$10$Wp6S7Vf4X.0pGzXz9XyYduzI6.R8z8L5v5.m7Gz8z8z8z8z8z8z8z",
 	}, nil
 }
 
-// 2. [추가] 관리자 관련 Mock (오류 해결 지점)
+// 2. 관리자 관련 Mock
 func (m *MockRepository) GetAdminByID(id string) (*domain.Admin, error) {
 	return &domain.Admin{
 		AdminNumber: 1,
@@ -39,7 +40,9 @@ func (m *MockRepository) GetAdminByID(id string) (*domain.Admin, error) {
 }
 
 // 3. 체육관 관련 Mock
-func (m *MockRepository) GetGyms() ([]domain.Gym, error) {
+// [수정 완료] 인터페이스 요구사항에 맞춰 string 파라미터를 추가했습니다.
+func (m *MockRepository) GetGyms(filter string) ([]domain.Gym, error) {
+	log.Printf("[MOCK] GetGyms called with filter: %s", filter)
 	return []domain.Gym{
 		{GussNumber: 1, GussName: "Mock 강남점", GussStatus: "OPEN", GussSize: 50, GussUserCount: 10},
 	}, nil
@@ -55,13 +58,18 @@ func (m *MockRepository) GetGymDetail(id int64) (*domain.Gym, error) {
 }
 
 // 4. 예약 관련 Mock
-func (m *MockRepository) CreateReservation(userNum, gymNum int64) (string, error) {
-	log.Printf("[MOCK] Reservation Created: User %d -> Gym %d", userNum, gymNum)
+func (m *MockRepository) CreateReservation(userNum, gymNum int64, resTime time.Time) (string, error) {
+	log.Printf("[MOCK] Reservation Created: User %d -> Gym %d at %v", userNum, gymNum, resTime)
 	return "CONFIRMED", nil
 }
 
 func (m *MockRepository) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
 	return []domain.Reservation{}, nil
+}
+
+func (m *MockRepository) CancelReservation(resNum int64, userNum int64, status string) error {
+	log.Printf("[MOCK] Reservation Cancelled: ResNum %d, UserNum %d, Status %s", resNum, userNum, status)
+	return nil
 }
 
 // 5. 기구 관리 Mock
@@ -93,7 +101,7 @@ func (m *MockRepository) GetSalesByGym(gymID int64) ([]map[string]interface{}, e
 	}, nil
 }
 
-// --- LogRepository Mock ---
+// --- MockLogRepository ---
 type MockLogRepository struct{}
 
 func NewMockLogRepository() LogRepository {
