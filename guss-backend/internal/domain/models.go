@@ -11,7 +11,7 @@ type User struct {
 	UserName   string `json:"user_name"   db:"user_name"`
 	UserPhone  string `json:"user_phone"  db:"user_phone"`
 	UserID     string `json:"user_id"     db:"user_id"`
-	UserPW     string `json:"-"           db:"user_pw"` // 비밀번호는 JSON 제외
+	UserPW     string `json:"user_pw"     db:"user_pw"` // 비밀번호는 JSON 제외
 }
 
 // Gym: 체육관 정보 (영업시간 추가)
@@ -53,6 +53,6 @@ type Reservation struct {
 type Admin struct {
 	AdminNumber int64         `json:"admin_number"   db:"admin_number"`
 	AdminID     string        `json:"admin_id"       db:"admin_id"`
-	AdminPW     string        `json:"-"             db:"admin_pw"`
+	AdminPW     string        `json:"admin_pw"       db:"admin_pw"`
 	FKGussID    sql.NullInt64 `json:"fk_guss_number" db:"fk_guss_number"` // 특정 지점 관리 혹은 전체
 }
