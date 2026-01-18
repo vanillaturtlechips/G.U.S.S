@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import StatusModal from './StatusModal';
+import { requestFCMToken } from '../firebase/firebaseConfig'; 
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
@@ -19,6 +20,15 @@ const Login: React.FC = () => {
       localStorage.setItem('token', token);
       localStorage.setItem('isLoggedIn', 'true');
       localStorage.setItem('userRole', role || 'USER'); // 권한 저장
+
+      const fcmToken = await requestFCMToken();
+    if (fcmToken) {
+      await api.post('/api/login', { 
+        user_id: id, 
+        user_pw: pw, 
+        fcm_token: fcmToken 
+      });
+    }
       
       setStatusModal({
         isOpen: true,

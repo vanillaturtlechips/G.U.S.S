@@ -58,7 +58,6 @@ export default function GussPage() {
       setShowReservationModal(false);
       setQrValue(response.data.qr_data);
       setShowQRModal(true);
-      await fetchDetail(); // [수정] 최신 인원수 반영을 위해 fetchDetail 완료 대기
     } catch (error: any) {
       setShowReservationModal(false);
       // [수정] 서버에서 보낸 에러 메시지 표시
