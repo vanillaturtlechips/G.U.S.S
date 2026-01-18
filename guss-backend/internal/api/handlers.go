@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log" // 추가됨
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,7 +22,6 @@ import (
 )
 
 type contextKey string
-
 const UserContextKey contextKey = "user"
 
 type Server struct {
@@ -41,166 +40,116 @@ func (s *Server) errorJSON(w http.ResponseWriter, message string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// HandleLogin: 유저/관리자 로그인 시 FCM 토큰 업데이트 로직 추가
+// HandleLogin: FCM 토큰 업데이트 포함
 func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		UserID   string `json:"user_id"`
 		UserPW   string `json:"user_pw"`
 		FCMToken string `json:"fcm_token"`
 	}
-	json.NewDecoder(r.Body).Decode(&input)
-	var userNumber int64
-	var userName string
-	var hashedPassword string
-	var role string = "USER"
-	var gymID int64 = 0
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		s.errorJSON(w, "잘못된 요청 형식", 400)
+		return
+	}
 
 	user, err := s.Repo.GetUserByID(input.UserID)
-	if err == nil {
-		userNumber, userName, hashedPassword = user.UserNumber, user.UserName, user.UserPW
-		if user.UserID == "admin" {
-			role = "ADMIN"
-		}
-		// 로그인 성공 시 FCM 토큰 업데이트
-		if input.FCMToken != "" {
-			s.Repo.UpdateFCMToken(input.UserID, input.FCMToken)
-		}
-	} else {
-		admin, err := s.Repo.GetAdminByID(input.UserID)
-		if err != nil {
-			s.errorJSON(w, "인증 실패", http.StatusUnauthorized)
-			return
-		}
-		userNumber, userName, hashedPassword, role = admin.AdminNumber, "관리자", admin.AdminPW, "ADMIN"
-		if admin.FKGussID.Valid {
-			gymID = admin.FKGussID.Int64
-		}
-	}
-	if !auth.CheckPasswordHash(input.UserPW, hashedPassword) {
-		s.errorJSON(w, "비밀번호 불일치", http.StatusUnauthorized)
+	if err != nil || !auth.CheckPasswordHash(input.UserPW, user.UserPW) {
+		s.errorJSON(w, "아이디 또는 비밀번호가 일치하지 않습니다.", 401)
 		return
 	}
-	token, _ := auth.GenerateToken(userNumber, input.UserID, role)
+
+	if input.FCMToken != "" {
+		s.Repo.UpdateFCMToken(input.UserID, input.FCMToken)
+	}
+
+	token, _ := auth.GenerateToken(user.UserNumber, user.UserID, "USER")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"token":     token,
-		"user_role": role,
-		"gym_id":    gymID,
-		"user_name": userName,
-		"status":    "success",
+		"status": "success", "token": token, "user_name": user.UserName,
 	})
 }
 
-// HandleReserve: SQS 메시지에 FCM 토큰 포함 및 성공 로그 추가
+// HandleReserve: 예약 정보만 생성 (인원 증가는 하지 않음)
 func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		GymID        int64  `json:"gym_id"`
-		FkGussNumber int64  `json:"fk_guss_number"`
-		VisitTime    string `json:"visit_time"`
+		GymID     int64  `json:"gym_id"`
+		VisitTime string `json:"visit_time"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		s.errorJSON(w, "잘못된 요청 형식입니다.", http.StatusBadRequest)
+	json.NewDecoder(r.Body).Decode(&req)
+
+	claims := r.Context().Value(UserContextKey).(*auth.Claims)
+	t, _ := time.Parse("2006-01-02 15:04:05", req.VisitTime)
+	
+	// DB 예약 생성
+	_, err := s.Repo.CreateReservation(claims.UserNumber, req.GymID, t)
+	if err != nil {
+		s.errorJSON(w, err.Error(), 400)
 		return
 	}
 
-	targetID := req.GymID
-	if targetID == 0 {
-		targetID = req.FkGussNumber
-	}
-	t, _ := time.Parse("2006-01-02 15:04:05", req.VisitTime)
-	claims := r.Context().Value(UserContextKey).(*auth.Claims)
-
-	// DB에서 FCM 토큰 조회
+	resID := uuid.New().String()
+	eventAt := time.Now().Format(time.RFC3339)
 	fcmToken, _ := s.Repo.GetFCMToken(claims.UserID)
 
-	reservationID := uuid.New().String()
-	eventAt := time.Now().Format(time.RFC3339)
-
-	_, err := s.Repo.CreateReservation(claims.UserNumber, targetID, t)
-	if err != nil {
-		s.errorJSON(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
+	// SQS 전송 (Lambda 트리거용)
 	if s.SQSClient != nil {
 		payload, _ := json.Marshal(map[string]interface{}{
-			"res_id":    reservationID,
-			"user_id":   claims.UserID,
-			"gym_id":    targetID,
-			"fcm_token": fcmToken,
-			"time":      req.VisitTime,
-			"event_at":  eventAt,
+			"res_id": resID, "user_id": claims.UserID, "fcm_token": fcmToken, "gym_id": req.GymID,
 		})
-
-		_, err := s.SQSClient.SendMessage(r.Context(), &sqs.SendMessageInput{
-			QueueUrl:               aws.String(s.SQSURL),
-			MessageBody:            aws.String(string(payload)),
-			MessageGroupId:         aws.String("GUSS-REV"),
-			MessageDeduplicationId: aws.String(reservationID),
+		s.SQSClient.SendMessage(r.Context(), &sqs.SendMessageInput{
+			QueueUrl: aws.String(s.SQSURL), MessageBody: aws.String(string(payload)),
 		})
-
-		if err != nil {
-			fmt.Printf("[SQS ERROR] 전송 실패: %v\n", err)
-		} else {
-			// userID -> claims.UserID로 수정 및 log 패키지 사용
-			log.Printf("[SUCCESS] SQS 메시지 전송 완료! (ID: %s, User: %s)", reservationID, claims.UserID)
-		}
 	}
 
-	checkInURL := fmt.Sprintf("https://api.guss.com/api/checkin?res_id=%s&user_id=%s&event_at=%s", reservationID, claims.UserID, eventAt)
+	// QR에 담길 실제 체크인 API 주소
+	checkInURL := fmt.Sprintf("https://api.guss.com/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s", 
+		resID, claims.UserID, req.GymID, eventAt)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":         "success",
-		"reservation_id": reservationID,
-		"qr_data":        checkInURL,
+		"status": "success", "qr_data": checkInURL,
 	})
 }
 
+// HandleCheckIn: 실제 QR 스캔 시 인원 증가 및 DynamoDB 업데이트
 func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
 	resID := r.URL.Query().Get("res_id")
 	userID := r.URL.Query().Get("user_id")
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gym_id"), 10, 64)
 	eventAt := r.URL.Query().Get("event_at")
 
-	if resID == "" || userID == "" || eventAt == "" {
-		s.errorJSON(w, "필수 체크인 정보가 누락되었습니다.", http.StatusBadRequest)
+	// 1. DB 인원수 증가
+	if err := s.Repo.IncrementUserCount(gymID); err != nil {
+		s.errorJSON(w, "입장 처리 실패", 500)
 		return
 	}
 
-	_, err := s.DynamoClient.UpdateItem(r.Context(), &dynamodb.UpdateItemInput{
+	// 2. DynamoDB 상태 변경
+	s.DynamoClient.UpdateItem(r.Context(), &dynamodb.UpdateItemInput{
 		TableName: aws.String(s.DynamoTable),
 		Key: map[string]types.AttributeValue{
 			"user_id":  &types.AttributeValueMemberS{Value: userID},
 			"event_at": &types.AttributeValueMemberS{Value: eventAt},
 		},
 		UpdateExpression: aws.String("SET #s = :status"),
-		ExpressionAttributeNames: map[string]string{
-			"#s": "status",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":status": &types.AttributeValueMemberS{Value: "ATTENDED"},
-		},
+		ExpressionAttributeNames: map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":status": &types.AttributeValueMemberS{Value: "ATTENDED"}},
 	})
 
-	if err != nil {
-		fmt.Printf("[DYNAMO ERROR] 체크인 실패: %v\n", err)
-		s.errorJSON(w, "체크인 처리 중 오류가 발생했습니다.", http.StatusInternalServerError)
-		return
-	}
+	log.Printf("[SUCCESS] User %s Check-in Gym %d (ResID: %s)", userID, gymID, resID)
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprint(w, "<h1>체크인 성공! 입장해 주세요.</h1>")
+}
 
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "success",
-		"message": "체크인이 완료되었습니다. 즐거운 운동 되세요!",
+func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
+	// 실제 운영 환경에서는 DB 통계 쿼리 결과를 반환
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "running",
+		"graph_data": []map[string]interface{}{
+			{"time": "09:00", "count": 10}, {"time": "14:00", "count": 30}, {"time": "20:00", "count": 45},
+		},
 	})
 }
 
-func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
-	var u domain.User
-	json.NewDecoder(r.Body).Decode(&u)
-	hashed, _ := auth.HashPassword(u.UserPW)
-	u.UserPW = hashed
-	s.Repo.CreateUser(&u)
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-}
-
+// 기타 조회 핸들러
 func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
 	gyms, _ := s.Repo.GetAllGyms()
 	json.NewEncoder(w).Encode(gyms)
@@ -212,18 +161,6 @@ func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 	gym, _ := s.Repo.GetGymDetail(id)
 	calc := s.Algo.(*algo.RealTimeCalculator)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"gym":        gym,
-		"congestion": calc.Calculate(gym.GussUserCount, gym.GussSize),
+		"gym": gym, "congestion": calc.Calculate(gym.GussUserCount, gym.GussSize),
 	})
-}
-
-func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request)   { json.NewEncoder(w).Encode([]string{}) }
-func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request)    { json.NewEncoder(w).Encode(map[string]string{"status": "success"}) }
-func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "success"}) }
-func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "success"}) }
-func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]string{}) }
-func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request)        { json.NewEncoder(w).Encode([]string{}) }
-func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request)       { json.NewEncoder(w).Encode(map[string]string{"status": "running"}) }
-func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

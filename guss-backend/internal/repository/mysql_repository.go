@@ -70,12 +70,37 @@ func (r *mysqlRepo) GetGymDetail(id int64) (*domain.Gym, error) {
 	return g, err
 }
 
-func (r *mysqlRepo) CreateReservation(userNum, gymNum int64, visitTime time.Time) (string, error) {
-	query := `INSERT INTO revs_table (fk_user_number, fk_guss_number, revs_time, revs_status) VALUES (?, ?, ?, 'CONFIRMED')`
-	_, err := r.db.Exec(query, userNum, gymNum, visitTime)
+func (r *mysqlRepo) CreateReservation(userNum, gymNum int64) (string, error) {
+	var count int
+	checkQuery := `SELECT COUNT(*) FROM revs_table WHERE fk_user_number = ? AND revs_status = 'CONFIRMED'`
+	err := r.db.QueryRow(checkQuery, userNum).Scan(&count)
 	if err != nil { return "", err }
-	r.db.Exec("UPDATE guss_table SET guss_user_count = guss_user_count + 1 WHERE guss_number = ?", gymNum)
-	return "CONFIRMED", nil
+	if count > 0 { return "DUPLICATE", errors.New("이미 활성화된 예약이 존재합니다.") }
+
+	query := `INSERT INTO revs_table (fk_user_number, fk_guss_number, revs_status, revs_time) 
+              VALUES (?, ?, 'CONFIRMED', NOW())`
+	_, err = r.db.Exec(query, userNum, gymNum)
+	return "SUCCESS", err
+}
+
+func (r *mysqlRepo) ProcessEntry(userNum, gymNum int64) error {
+	tx, err := r.db.Begin()
+	if err != nil { return err }
+	defer tx.Rollback()
+
+	// 1. 예약 상태를 USED로 변경
+	res, err := tx.Exec(`UPDATE revs_table SET revs_status = 'USED' 
+                         WHERE fk_user_number = ? AND fk_guss_number = ? AND revs_status = 'CONFIRMED' LIMIT 1`, 
+                         userNum, gymNum)
+	if err != nil { return err }
+	affected, _ := res.RowsAffected()
+	if affected == 0 { return errors.New("유효한 예약 내역이 없습니다.") }
+
+	// 2. 체육관 실시간 인원 +1
+	_, err = tx.Exec(`UPDATE guss_table SET guss_user_count = guss_user_count + 1 WHERE guss_number = ?`, gymNum)
+	if err != nil { return err }
+
+	return tx.Commit()
 }
 
 func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) { return []domain.Equipment{}, nil }

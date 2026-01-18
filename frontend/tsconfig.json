@@ -5,6 +5,8 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    "types": [],
+    "typeRoots": ["./node_modules/@types"], // <--- 여기에 쉼표(,)를 추가했습니다.
 
     /* Bundler mode */
     "moduleResolution": "bundler",
