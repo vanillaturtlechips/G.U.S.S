@@ -2,7 +2,7 @@ package repository
 
 import (
 	"guss-backend/internal/domain"
-	"time" // 추가
+	"time"
 )
 
 type Repository interface {
@@ -13,20 +13,21 @@ type Repository interface {
 
 	GetAllGyms() ([]domain.Gym, error)
 	GetGymDetail(id int64) (*domain.Gym, error)
-	IncrementUserCount(gymID int64) error 
+	IncrementUserCount(gymID int64) error
 
-	// visitTime 매개변수를 추가하여 핸들러와 일치시킵니다.
 	CreateReservation(userNum, gymNum int64, visitTime time.Time) (string, error)
 	GetReservationsByGym(gymID int64) ([]domain.Reservation, error)
+	GetActiveReservationByUser(userNum int64) (*domain.Reservation, error)
+	CancelReservation(resID int64, userNum int64) error
 
 	GetAdminByID(id string) (*domain.Admin, error)
 
 	GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error)
-	AddEquipment(eq *domain.Equipment) error 
+	AddEquipment(eq *domain.Equipment) error
 	UpdateEquipment(eq *domain.Equipment) error
 	DeleteEquipment(eqID int64) error
 
-	GetSalesByGym(gymID int64) ([]map[string]interface{}, error)
+	GetSalesByGym(gymID int64) ([]domain.Sale, error)
 }
 
 type LogRepository interface {

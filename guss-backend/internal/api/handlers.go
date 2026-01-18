@@ -114,8 +114,38 @@ func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("<html><body><h1>Check-in Success! 반갑습니다.</h1></body></html>"))
 }
 
+// 🔥 예약 취소
 func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(UserContextKey).(*auth.Claims)
+	
+	var req struct {
+		ReservationID int64 `json:"reservation_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorJSON(w, "잘못된 요청 형식입니다.", 400)
+		return
+	}
+
+	if err := s.Repo.CancelReservation(req.ReservationID, claims.UserNumber); err != nil {
+		s.errorJSON(w, err.Error(), 400)
+		return
+	}
+
+	log.Printf("[CANCEL] User: %s, ReservationID: %d", claims.UserID, req.ReservationID)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// 🔥 활성 예약 조회
+func (s *Server) HandleGetActiveReservation(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(UserContextKey).(*auth.Claims)
+	
+	reservation, err := s.Repo.GetActiveReservationByUser(claims.UserNumber)
+	if err != nil || reservation == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"reservation": nil})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"reservation": reservation})
 }
 
 func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +155,6 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		FCMToken string `json:"fcm_token"`
 	}
 
-	// 🔥 에러 체크 추가
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		log.Printf("[LOGIN] JSON decode error: %v", err)
 		s.errorJSON(w, "잘못된 요청 형식", 400)
@@ -190,6 +219,40 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
 }
 
+// 🔥 Admin - 예약 로그 조회
+func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
+	if gymID == 0 {
+		s.errorJSON(w, "gymId는 필수입니다.", 400)
+		return
+	}
+
+	reservations, err := s.Repo.GetReservationsByGym(gymID)
+	if err != nil {
+		s.errorJSON(w, err.Error(), 500)
+		return
+	}
+
+	json.NewEncoder(w).Encode(reservations)
+}
+
+// 🔥 Admin - 매출 로그 조회
+func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
+	if gymID == 0 {
+		s.errorJSON(w, "gymId는 필수입니다.", 400)
+		return
+	}
+
+	sales, err := s.Repo.GetSalesByGym(gymID)
+	if err != nil {
+		s.errorJSON(w, err.Error(), 500)
+		return
+	}
+
+	json.NewEncoder(w).Encode(sales)
+}
+
 func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode([]string{})
 }
@@ -204,12 +267,4 @@ func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-}
-
-func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode([]string{})
-}
-
-func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode([]string{})
 }

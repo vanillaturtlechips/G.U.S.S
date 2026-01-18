@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, MapPin, LogIn, LogOut, Activity, Shield, Phone } from 'lucide-react';
 import seoulMapImg from '../assets/seoul-map.png'; 
-import api from '../api/axios'; 
-import CongestionChart from '../components/charts/CongestionChart';
+import api from '../api/axios';
 
 const POSITIONS: { [key: number]: { top: string; left: string } } = {
   1: { top: '78%', left: '68%' }, 
@@ -27,13 +26,14 @@ const Dashboard: React.FC = () => {
     try {
       const response = await api.get(`/api/gyms?search=${keyword}`);
       const data = response.data;
-      setGyms(data);
-      if (data.length > 0 && !selectedGym) {
+      setGyms(Array.isArray(data) ? data : []);
+      if (Array.isArray(data) && data.length > 0 && !selectedGym) {
         setSelectedGym(data[0]);
       }
       setLoading(false);
     } catch (error) {
       console.error("데이터 로딩 실패:", error);
+      setGyms([]);
       setLoading(false);
     }
   };
@@ -147,9 +147,6 @@ const Dashboard: React.FC = () => {
                     <p className="text-zinc-400 mt-2 text-sm">
                       현재 이용 인원: <span className="text-white font-black text-lg">{selectedGym.guss_user_count}</span> 명 / {selectedGym.guss_size}
                     </p>
-                    <div className="mt-4 w-full h-40 bg-black/40 rounded-xl border border-zinc-800/50 p-2">
-                      <CongestionChart gymId={selectedGym.guss_number} color="#10b981" />
-                    </div>
                   </div>
                 </div>
               </div>

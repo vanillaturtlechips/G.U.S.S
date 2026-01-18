@@ -11,40 +11,46 @@ const Login: React.FC = () => {
   const [statusModal, setStatusModal] = useState({ isOpen: false, type: 'SUCCESS' as any, title: '', message: '' });
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const response = await api.post('/api/login', { user_id: id, user_pw: pw });
-      // 백엔드에서 user_name과 role을 필수로 내려줘야 함
-      const { token, user_name, role } = response.data;
-      
-      localStorage.setItem('token', token);
-      localStorage.setItem('isLoggedIn', 'true');
-      localStorage.setItem('userRole', role || 'USER'); // 권한 저장
+  e.preventDefault();
+  try {
+    const response = await api.post('/api/login', { user_id: id, user_pw: pw });
+    const { token, user_name, role } = response.data;
 
+    localStorage.setItem('token', token);
+    localStorage.setItem('isLoggedIn', 'true');
+    localStorage.setItem('userRole', role || 'USER');
+
+    // 🔥 FCM 토큰 발급 (에러 무시)
+    try {
       const fcmToken = await requestFCMToken();
-    if (fcmToken) {
-      await api.post('/api/login', { 
-        user_id: id, 
-        user_pw: pw, 
-        fcm_token: fcmToken 
-      });
+      if (fcmToken) {
+        await api.post('/api/login', {
+          user_id: id,
+          user_pw: pw,
+          fcm_token: fcmToken
+        });
+      }
+    } catch (fcmError) {
+      console.log('푸시 알림 설정 실패 (무시됨):', fcmError);
+      // 로그인은 계속 진행
     }
-      
-      setStatusModal({
-        isOpen: true,
-        type: 'SUCCESS',
-        title: 'ACCESS GRANTED',
-        message: `${user_name || id} 요원님, GUSS 시스템 접속을 환영합니다.`
-      });
-    } catch (error: any) {
-      setStatusModal({
-        isOpen: true,
-        type: 'ERROR',
-        title: 'AUTH FAILED',
-        message: '아이디 또는 비밀번호가 일치하지 않습니다.'
-      });
-    }
-  };
+
+    setStatusModal({
+      isOpen: true,
+      type: 'SUCCESS',
+      title: 'ACCESS GRANTED',
+      message: `${user_name || id} 요원님, GUSS 시스템 접속을 환영합니다.`
+    });
+  } catch (error: any) {
+    setStatusModal({
+      isOpen: true,
+      type: 'ERROR',
+      title: 'AUTH FAILED',
+      message: '아이디 또는 비밀번호가 일치하지 않습니다.'
+    });
+  }
+};
+
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-6">

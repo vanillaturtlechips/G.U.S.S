@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   Activity, TrendingUp, Clock, Users, 
-  Calendar, Target, Heart, MapPin, ChevronLeft, Shield, Phone
+  Calendar, Target, Heart, MapPin, ChevronLeft, Shield, Phone, XCircle
 } from 'lucide-react';
 import api from '../api/axios';
 import StatusModal from './StatusModal';
@@ -19,9 +19,8 @@ export default function GussPage() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrValue, setQrValue] = useState("");
   const [statusModal, setStatusModal] = useState({ isOpen: false, type: 'SUCCESS' as any, title: '', message: '' });
-  
-  // 연타 방지를 위한 제출 상태 추가
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeReservation, setActiveReservation] = useState<any>(null);
 
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
 
@@ -39,33 +38,91 @@ export default function GussPage() {
     } catch (error) { console.error("데이터 로딩 실패:", error); }
   };
 
+  const fetchActiveReservation = async () => {
+    if (!isLoggedIn) return;
+    try {
+      const response = await api.get('/api/reserve/active');
+      setActiveReservation(response.data.reservation || null);
+    } catch (error) {
+      setActiveReservation(null);
+    }
+  };
+
   useEffect(() => {
     fetchDetail();
-    const interval = setInterval(fetchDetail, 5000);
+    fetchActiveReservation();
+    const interval = setInterval(() => {
+      fetchDetail();
+      fetchActiveReservation();
+    }, 5000);
     return () => clearInterval(interval);
-  }, [gymId]);
+  }, [gymId, isLoggedIn]);
 
   const handleReservationConfirm = async () => {
-    if (!selectedTime || isSubmitting) return; // [수정] 제출 중이면 중단
+    if (!selectedTime || isSubmitting) return;
     
-    setIsSubmitting(true); // [수정] 제출 시작
+    setIsSubmitting(true);
     try {
       const today = new Date().toISOString().split('T')[0];
       const response = await api.post('/api/reserve', {
         gym_id: parseInt(gymId || '0'),
         visit_time: `${today} ${selectedTime}:00`
       });
+
+      if (response.data.status === 'DUPLICATE') {
+        setShowReservationModal(false);
+        setStatusModal({
+          isOpen: true,
+          type: 'ERROR',
+          title: 'DUPLICATE',
+          message: '이미 활성화된 예약이 존재합니다.\n기존 예약을 취소한 후 다시 시도해주세요.'
+        });
+        return;
+      }
+
       setShowReservationModal(false);
       setQrValue(response.data.qr_data);
       setShowQRModal(true);
+      await fetchActiveReservation();
     } catch (error: any) {
       setShowReservationModal(false);
-      // [수정] 서버에서 보낸 에러 메시지 표시
       const errorMessage = error.response?.data?.error || '예약 오류가 발생했습니다.';
       setStatusModal({ isOpen: true, type: 'ERROR', title: 'FAILED', message: errorMessage });
     } finally {
-      setIsSubmitting(false); // [수정] 제출 완료 후 해제
+      setIsSubmitting(false);
     }
+  };
+
+  const handleCancelReservation = async () => {
+    if (!activeReservation) return;
+    
+    setStatusModal({
+      isOpen: true,
+      type: 'WAITING',
+      title: 'CONFIRM',
+      message: '예약을 취소하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
+      onConfirm: async () => {
+        try {
+          await api.post('/api/reserve/cancel', {
+            reservation_id: activeReservation.revs_number
+          });
+          setStatusModal({
+            isOpen: true,
+            type: 'SUCCESS',
+            title: 'CANCELLED',
+            message: '예약이 성공적으로 취소되었습니다.'
+          });
+          await fetchActiveReservation();
+        } catch (error: any) {
+          setStatusModal({
+            isOpen: true,
+            type: 'ERROR',
+            title: 'FAILED',
+            message: error.response?.data?.error || '취소 처리 중 오류가 발생했습니다.'
+          });
+        }
+      }
+    });
   };
 
   if (!gymData) return <div className="min-h-screen bg-black flex items-center justify-center text-emerald-400 font-black">LOADING GYM DATA...</div>;
@@ -104,7 +161,22 @@ export default function GussPage() {
               <div className="flex items-center gap-2 mb-4 text-emerald-400"><Clock className="w-5 h-5"/> <span className="font-bold">영업 시간</span></div>
               <p className="text-xl font-bold">{gym?.guss_open_time || '06:00'} - {gym?.guss_close_time || '23:00'}</p>
             </div>
+            
+            {isLoggedIn && activeReservation && (
+              <div className="bg-zinc-950 border-2 border-amber-500/30 rounded-2xl p-6 animate-in fade-in duration-500">
+                <div className="flex items-center gap-2 mb-4 text-amber-400"><Calendar className="w-5 h-5 animate-pulse"/> <span className="font-bold">활성 예약</span></div>
+                <p className="text-sm text-zinc-400 mb-2">방문 예정 시간</p>
+                <p className="text-lg font-black text-white mb-4">{new Date(activeReservation.visit_time).toLocaleString('ko-KR')}</p>
+                <button 
+                  onClick={handleCancelReservation}
+                  className="w-full py-3 bg-red-500/20 border-2 border-red-500/50 rounded-xl text-red-400 font-bold hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                >
+                  <XCircle className="w-5 h-5" /> 예약 취소
+                </button>
+              </div>
+            )}
           </div>
+          
           <div className="lg:col-span-2 bg-zinc-950 border-2 border-emerald-500/30 rounded-2xl p-8 flex flex-col justify-between">
             <div>
               <h2 className="text-2xl font-black mb-6 flex items-center gap-2"><Shield className="text-emerald-400" /> 시설 이용 안내</h2>
@@ -116,7 +188,15 @@ export default function GussPage() {
             </div>
             <div className="mt-12 flex justify-end">
               <button 
-                onClick={() => { if(!isLoggedIn) setStatusModal({isOpen:true, type:'AUTH', title:'DENIED', message:'로그인이 필요합니다.'}); else setShowReservationModal(true); }} 
+                onClick={() => { 
+                  if(!isLoggedIn) {
+                    setStatusModal({isOpen:true, type:'AUTH', title:'DENIED', message:'로그인이 필요합니다.'});
+                  } else if(activeReservation) {
+                    setStatusModal({isOpen:true, type:'ERROR', title:'DUPLICATE', message:'이미 활성화된 예약이 있습니다.\n기존 예약을 먼저 취소해주세요.'});
+                  } else {
+                    setShowReservationModal(true);
+                  }
+                }} 
                 className="px-10 py-5 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-2xl text-black font-black text-xl hover:scale-105 transition-all shadow-xl shadow-emerald-500/40 flex items-center gap-3"
               >
                 <Calendar className="w-6 h-6" /> 지금 예약하기
@@ -166,7 +246,15 @@ export default function GussPage() {
           </div>
         </div>
       )}
-      <StatusModal isOpen={statusModal.isOpen} type={statusModal.type} title={statusModal.title} message={statusModal.message} onClose={() => setStatusModal({ ...statusModal, isOpen: false })} onConfirm={statusModal.type === 'AUTH' ? () => navigate('/login') : undefined} />
+      
+      <StatusModal 
+        isOpen={statusModal.isOpen} 
+        type={statusModal.type} 
+        title={statusModal.title} 
+        message={statusModal.message} 
+        onClose={() => setStatusModal({ ...statusModal, isOpen: false })} 
+        onConfirm={statusModal.onConfirm || (statusModal.type === 'AUTH' ? () => navigate('/login') : undefined)} 
+      />
     </div>
   );
 }

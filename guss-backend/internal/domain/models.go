@@ -56,3 +56,10 @@ type Admin struct {
 	AdminPW     string        `json:"admin_pw"       db:"admin_pw"`
 	FKGussID    sql.NullInt64 `json:"fk_guss_number" db:"fk_guss_number"` // 특정 지점 관리 혹은 전체
 }
+
+type Sale struct {
+	SalesNumber int64     `json:"sales_number" db:"sales_number"`
+	SalesDate   time.Time `json:"sales_date"   db:"sales_date"`
+	SalesAmount int       `json:"sales_amount" db:"sales_amount"`
+	SalesType   string    `json:"sales_type"   db:"sales_type"`
+}

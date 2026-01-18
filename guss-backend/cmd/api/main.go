@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	// 1. 실행 옵션 설정 (포트, DB 주소, SQS URL, DynamoDB 테이블)
+	// 1. 실행 옵션 설정
 	port := flag.String("port", "9000", "API 서버 포트")
 	mysqlDSN := flag.String("dsn", "", "MySQL 연결 정보 (필수)")
 	sqsURL := flag.String("sqs_url", "", "SQS FIFO 큐 주소 (필수)")
@@ -30,7 +30,7 @@ func main() {
 		log.Fatal("에러: -dsn과 -sqs_url 옵션은 필수입니다.")
 	}
 
-	// 2. AWS 설정 로드 및 클라이언트(SQS, DynamoDB) 초기화
+	// 2. AWS 설정 로드 및 클라이언트 초기화
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("ap-northeast-2"))
 	if err != nil {
 		log.Fatalf("AWS 설정 로드 실패: %v", err)
@@ -51,7 +51,6 @@ func main() {
 	}
 
 	// 4. 레포지토리 및 서버 인스턴스 생성
-	// Server 구조체에 DynamoClient와 DynamoTable을 주입합니다.
 	repo := repository.NewMySQLRepository(db)
 	server := &api.Server{
 		Repo:         repo,
@@ -72,18 +71,18 @@ func main() {
 	mux.HandleFunc("/api/gyms", server.HandleGetGyms)
 	mux.HandleFunc("/api/gyms/", server.HandleGetGymDetail)
 
-	// [체크인 API] - QR 스캔 시 호출되는 경로 (새로 추가됨)
+	// [체크인 API]
 	mux.HandleFunc("/api/checkin", server.HandleCheckIn)
 
 	// [예약 API] - 인증 미들웨어 적용
 	mux.Handle("/api/reserve", server.AuthMiddleware(http.HandlerFunc(server.HandleReserve)))
 	mux.Handle("/api/reserve/cancel", server.AuthMiddleware(http.HandlerFunc(server.HandleCancelReservation)))
+	mux.Handle("/api/reserve/active", server.AuthMiddleware(http.HandlerFunc(server.HandleGetActiveReservation)))
 
-	// [관리자 API]
-	mux.HandleFunc("/api/admin/sales", server.HandleGetSales)
-	mux.HandleFunc("/api/admin/equipments", server.HandleGetEquipments)
-
-	
+	// [관리자 API] - 인증 미들웨어 적용
+	mux.Handle("/api/admin/reservations", server.AuthMiddleware(http.HandlerFunc(server.HandleGetReservations)))
+	mux.Handle("/api/admin/sales", server.AuthMiddleware(http.HandlerFunc(server.HandleGetSales)))
+	mux.Handle("/api/admin/equipments", server.AuthMiddleware(http.HandlerFunc(server.HandleGetEquipments)))
 
 	log.Printf("GUSS API 서버 가동 중 (Port: %s)", *port)
 	if err := http.ListenAndServe(":"+*port, mux); err != nil {
