@@ -6,7 +6,7 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "types": [],
-    "typeRoots": ["./node_modules/@types"], // <--- 여기에 쉼표(,)를 추가했습니다.
+    "typeRoots": ["./node_modules/@types"], // 쉼표 추가 완료
 
     /* Bundler mode */
     "moduleResolution": "bundler",
