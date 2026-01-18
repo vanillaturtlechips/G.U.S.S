@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log" // 빌드 에러의 원인: 아래에서 반드시 사용해야 합니다.
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,7 +40,6 @@ func (s *Server) errorJSON(w http.ResponseWriter, message string, code int) {
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// HandleReserve: 예약 생성 및 로그 기록
 func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		GymID     int64  `json:"gym_id"`
@@ -70,7 +69,6 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	resID := uuid.New().String()
 	eventAt := time.Now().Format(time.RFC3339)
 
-	// [log 사용] 예약 발생 로그 기록
 	log.Printf("[RESERVE] User: %s, Gym: %d, Time: %s", claims.UserID, req.GymID, t.Format("15:04:05"))
 
 	if s.SQSClient != nil {
@@ -83,11 +81,12 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	qrURL := fmt.Sprintf("https://api.guss.com/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s", resID, claims.UserID, req.GymID, eventAt)
+	qrURL := fmt.Sprintf("https://13.124.132.80/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s",
+		resID, claims.UserID, req.GymID, eventAt)
+
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "qr_data": qrURL})
 }
 
-// HandleCheckIn: 실제 QR 스캔 시에만 인원이 증가하며 로그를 남깁니다.
 func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
 	resID := r.URL.Query().Get("res_id")
 	userID := r.URL.Query().Get("user_id")
@@ -99,7 +98,6 @@ func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// [log 사용] 체크인 성공 로그 기록
 	log.Printf("[CHECK-IN SUCCESS] ResID: %s, User: %s, Gym: %d", resID, userID, gymID)
 
 	s.DynamoClient.UpdateItem(r.Context(), &dynamodb.UpdateItemInput{
@@ -120,28 +118,66 @@ func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// --- 아래는 빌드를 위한 공통 핸들러 (이전과 동일) ---
 func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	var input struct { UserID, UserPW, FCMToken string }
-	json.NewDecoder(r.Body).Decode(&input)
-	user, err := s.Repo.GetUserByID(input.UserID)
-	if err != nil || !auth.CheckPasswordHash(input.UserPW, user.UserPW) {
-		s.errorJSON(w, "인증 실패", 401); return
+	var input struct {
+		UserID   string `json:"user_id"`
+		UserPW   string `json:"user_pw"`
+		FCMToken string `json:"fcm_token"`
 	}
-	if input.FCMToken != "" { s.Repo.UpdateFCMToken(input.UserID, input.FCMToken) }
+
+	// 🔥 에러 체크 추가
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("[LOGIN] JSON decode error: %v", err)
+		s.errorJSON(w, "잘못된 요청 형식", 400)
+		return
+	}
+
+	log.Printf("[LOGIN] Attempting login for user: %s", input.UserID)
+
+	user, err := s.Repo.GetUserByID(input.UserID)
+	if err != nil {
+		log.Printf("[LOGIN] GetUserByID error: %v", err)
+		s.errorJSON(w, "인증 실패", 401)
+		return
+	}
+
+	log.Printf("[LOGIN] User found: %s, checking password", user.UserID)
+
+	if !auth.CheckPasswordHash(input.UserPW, user.UserPW) {
+		log.Printf("[LOGIN] Password mismatch for user: %s", input.UserID)
+		s.errorJSON(w, "인증 실패", 401)
+		return
+	}
+
+	log.Printf("[LOGIN] Login successful for user: %s", input.UserID)
+
+	if input.FCMToken != "" {
+		s.Repo.UpdateFCMToken(input.UserID, input.FCMToken)
+	}
+
 	token, _ := auth.GenerateToken(user.UserNumber, user.UserID, "USER")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "token": token, "user_name": user.UserName})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"token": token,
+		"user_name": user.UserName,
+		"role": "USER",
+	})
 }
+
 func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	var u domain.User
 	json.NewDecoder(r.Body).Decode(&u)
-	h, _ := auth.HashPassword(u.UserPW); u.UserPW = h
+	h, _ := auth.HashPassword(u.UserPW)
+	u.UserPW = h
 	s.Repo.CreateUser(&u)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
+
 func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
-	gyms, _ := s.Repo.GetAllGyms(); json.NewEncoder(w).Encode(gyms)
+	gyms, _ := s.Repo.GetAllGyms()
+	json.NewEncoder(w).Encode(gyms)
 }
+
 func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
@@ -149,10 +185,31 @@ func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
 	calc := s.Algo.(*algo.RealTimeCalculator)
 	json.NewEncoder(w).Encode(map[string]interface{}{"gym": gym, "congestion": calc.Calculate(gym.GussUserCount, gym.GussSize)})
 }
-func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "running"}) }
-func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]string{}) }
-func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "success"}) }
-func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "success"}) }
-func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(map[string]string{"status": "success"}) }
-func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]string{}) }
-func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode([]string{}) }
+
+func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
+}
+
+func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode([]string{})
+}
+
+func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode([]string{})
+}
+
+func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode([]string{})
+}
