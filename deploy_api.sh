@@ -1,23 +1,35 @@
 #!/bin/bash
 
-# 1. guss-backend 디렉토리로 이동
-cd guss-backend
+# 1. 동적 경로 설정 (어디서 실행하든 현재 폴더를 기준으로 잡음)
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+BINARY_NAME="guss-api"
 
-# 2. 빌드 실행 (API 서버용)
-echo "Building GUSS API binary..."
-# -o 옵션 이름을 guss-api로 차별화합니다.
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -o guss-api cmd/api/main.go
+echo "--- [INFO] 현재 작업 경로: $PROJECT_ROOT ---"
+cd "$PROJECT_ROOT"
 
-# 빌드 성공 여부 확인
-if [ $? -ne 0 ]; then
-    echo "API Build failed!"
+# 2. 로컬 변경 사항 처리 (Pull 충돌 방지)
+echo "--- [GIT] 로컬 변경사항 Stash 및 Pull 시작 ---"
+git stash
+git pull origin myong/lambda
+
+# 3. API 서버 빌드 (cmd/api/main.go -> guss-api)
+echo "--- [BUILD] Go API 서버 빌드 중... ---"
+go build -v -o $BINARY_NAME cmd/api/main.go
+
+if [ $? -eq 0 ]; then
+    echo "--- [SUCCESS] 빌드 성공: $BINARY_NAME ---"
+else
+    echo "--- [ERROR] 빌드 실패! 로그를 확인하세요. ---"
     exit 1
 fi
 
-echo "API Build finished: guss-api"
+# 4. 실행 권한 부여
+chmod +x $BINARY_NAME
 
-# 3. (선택 사항) 서버 재시작 로직
-# 지금은 베스천에서 직접 테스트하시니까, 여기까지만 하고 나중에 
-# AMI로 배포할 때 이 밑에 실행 코드를 넣으면 됩니다.
+# 5. Systemd 서비스 재시작
+echo "--- [DEPLOY] guss-api 서비스 재시작 중... ---"
+sudo systemctl restart guss-api
 
-echo "Ready to run!"
+# 6. 최종 상태 확인
+echo "--- [STATUS] 서비스 상태 확인 ---"
+systemctl status guss-api --no-pager
