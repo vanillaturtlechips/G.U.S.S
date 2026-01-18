@@ -14,7 +14,6 @@ import {
   ChartOptions
 } from 'chart.js';
 
-// ChartJS 플러그인 등록
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -27,12 +26,11 @@ ChartJS.register(
 );
 
 interface CongestionChartProps {
-  gymId: number; // 지점 ID
-  color?: string; // 기존 디자인 포인트 컬러를 받아올 수 있게 확장
+  gymId: number;
+  color?: string;
 }
 
 const CongestionChart: React.FC<CongestionChartProps> = ({ gymId, color = '#4ade80' }) => {
-  // 차트 데이터 상태 관리 (타입 지정)
   const [chartData, setChartData] = useState<ChartData<'line'>>({
     labels: [],
     datasets: [],
@@ -44,9 +42,11 @@ const CongestionChart: React.FC<CongestionChartProps> = ({ gymId, color = '#4ade
         const response = await fetch(`/api/gyms/${gymId}/congestion`);
         const result = await response.json();
 
+        // [수정] 초(second) 단위를 추가하여 중복 라벨 방지 (차트 렌더링 정상화)
         const now = new Date().toLocaleTimeString('ko-KR', { 
           hour: '2-digit', 
-          minute: '2-digit' 
+          minute: '2-digit',
+          second: '2-digit' 
         });
 
         setChartData((prev) => {
@@ -62,7 +62,7 @@ const CongestionChart: React.FC<CongestionChartProps> = ({ gymId, color = '#4ade
                 label: '혼잡도 (%)',
                 data: newData as number[],
                 borderColor: color,
-                backgroundColor: `${color}33`, // 컬러에 투명도 20% 추가
+                backgroundColor: `${color}33`,
                 tension: 0.4,
                 pointRadius: 4,
                 pointBackgroundColor: color,
@@ -80,7 +80,6 @@ const CongestionChart: React.FC<CongestionChartProps> = ({ gymId, color = '#4ade
     return () => clearInterval(interval);
   }, [gymId, color]);
 
-  // 차트 옵션 설정 (타입 지정)
   const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,

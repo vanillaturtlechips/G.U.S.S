@@ -19,6 +19,9 @@ export default function GussPage() {
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrValue, setQrValue] = useState("");
   const [statusModal, setStatusModal] = useState({ isOpen: false, type: 'SUCCESS' as any, title: '', message: '' });
+  
+  // 연타 방지를 위한 제출 상태 추가
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
 
@@ -43,7 +46,9 @@ export default function GussPage() {
   }, [gymId]);
 
   const handleReservationConfirm = async () => {
-    if (!selectedTime) return;
+    if (!selectedTime || isSubmitting) return; // [수정] 제출 중이면 중단
+    
+    setIsSubmitting(true); // [수정] 제출 시작
     try {
       const today = new Date().toISOString().split('T')[0];
       const response = await api.post('/api/reserve', {
@@ -53,10 +58,14 @@ export default function GussPage() {
       setShowReservationModal(false);
       setQrValue(response.data.qr_data);
       setShowQRModal(true);
-      fetchDetail();
+      await fetchDetail(); // [수정] 최신 인원수 반영을 위해 fetchDetail 완료 대기
     } catch (error: any) {
       setShowReservationModal(false);
-      setStatusModal({ isOpen: true, type: 'ERROR', title: 'FAILED', message: error.response?.data?.error || '예약 오류' });
+      // [수정] 서버에서 보낸 에러 메시지 표시
+      const errorMessage = error.response?.data?.error || '예약 오류가 발생했습니다.';
+      setStatusModal({ isOpen: true, type: 'ERROR', title: 'FAILED', message: errorMessage });
+    } finally {
+      setIsSubmitting(false); // [수정] 제출 완료 후 해제
     }
   };
 
@@ -107,7 +116,10 @@ export default function GussPage() {
               </ul>
             </div>
             <div className="mt-12 flex justify-end">
-              <button onClick={() => { if(!isLoggedIn) setStatusModal({isOpen:true, type:'AUTH', title:'DENIED', message:'로그인이 필요합니다.'}); else setShowReservationModal(true); }} className="px-10 py-5 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-2xl text-black font-black text-xl hover:scale-105 transition-all shadow-xl shadow-emerald-500/40 flex items-center gap-3">
+              <button 
+                onClick={() => { if(!isLoggedIn) setStatusModal({isOpen:true, type:'AUTH', title:'DENIED', message:'로그인이 필요합니다.'}); else setShowReservationModal(true); }} 
+                className="px-10 py-5 bg-gradient-to-r from-emerald-500 to-lime-500 rounded-2xl text-black font-black text-xl hover:scale-105 transition-all shadow-xl shadow-emerald-500/40 flex items-center gap-3"
+              >
                 <Calendar className="w-6 h-6" /> 지금 예약하기
               </button>
             </div>
@@ -129,7 +141,13 @@ export default function GussPage() {
               </div>
               <div className="flex gap-4">
                 <button onClick={() => setShowReservationModal(false)} className="flex-1 py-4 bg-zinc-900 rounded-xl font-bold hover:bg-zinc-800 transition-all text-zinc-500">취소</button>
-                <button onClick={handleReservationConfirm} className="flex-1 py-4 bg-emerald-500 text-black rounded-xl font-black hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20">예약 완료</button>
+                <button 
+                  onClick={handleReservationConfirm} 
+                  disabled={isSubmitting}
+                  className={`flex-1 py-4 bg-emerald-500 text-black rounded-xl font-black hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isSubmitting ? '처리 중...' : '예약 완료'}
+                </button>
               </div>
             </div>
           </div>
