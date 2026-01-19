@@ -52,7 +52,7 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 
 	t, err := time.Parse("2006-01-02 15:04:05", req.VisitTime)
 	if err != nil { t = time.Now() }
-	
+
 	claims := r.Context().Value(UserContextKey).(*auth.Claims)
 
 	status, err := s.Repo.CreateReservation(claims.UserNumber, req.GymID, t)
@@ -72,13 +72,26 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[RESERVE] User: %s, Gym: %d, Time: %s", claims.UserID, req.GymID, t.Format("15:04:05"))
 
 	if s.SQSClient != nil {
+		log.Printf("[SQS] Sending message to queue...")
 		fcmToken, _ := s.Repo.GetFCMToken(claims.UserID)
+		log.Printf("[SQS] FCM Token: %s", fcmToken)
+		
 		payload, _ := json.Marshal(map[string]interface{}{
 			"res_id": resID, "user_id": claims.UserID, "fcm_token": fcmToken, "gym_id": req.GymID, "event_at": eventAt,
 		})
-		s.SQSClient.SendMessage(r.Context(), &sqs.SendMessageInput{
-			QueueUrl: aws.String(s.SQSURL), MessageBody: aws.String(string(payload)),
+
+		_, err := s.SQSClient.SendMessage(r.Context(), &sqs.SendMessageInput{
+			QueueUrl:               aws.String(s.SQSURL),
+			MessageBody:            aws.String(string(payload)),
+			MessageGroupId:         aws.String("reservation"),
+			MessageDeduplicationId: aws.String(resID),
 		})
+
+		if err != nil {
+			log.Printf("[SQS ERROR] Failed to send: %v", err)
+		} else {
+			log.Printf("[SQS SUCCESS] Message sent!")
+		}
 	}
 
 	qrURL := fmt.Sprintf("https://43.203.212.179/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s",
@@ -116,7 +129,7 @@ func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(UserContextKey).(*auth.Claims)
-	
+
 	var req struct {
 		ReservationID int64 `json:"reservation_id"`
 	}
@@ -136,13 +149,13 @@ func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) HandleGetActiveReservation(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(UserContextKey).(*auth.Claims)
-	
+
 	log.Printf("[GET ACTIVE] UserNumber: %d, UserID: %s", claims.UserNumber, claims.UserID)
-	
+
 	reservation, err := s.Repo.GetActiveReservationByUser(claims.UserNumber)
-	
+
 	log.Printf("[GET ACTIVE] Reservation: %+v, Error: %v", reservation, err)
-	
+
 	if err != nil || reservation == nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"reservation": nil})
 		return
@@ -222,12 +235,11 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
 }
 
-// 🔥 Admin - 예약 로그 조회 (gymId 체크 제거 - 이미 쿼리에서 필터링)
 func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
-	
+
 	log.Printf("[GET RESERVATIONS] GymID: %d", gymID)
-	
+
 	reservations, err := s.Repo.GetReservationsByGym(gymID)
 	if err != nil {
 		log.Printf("[GET RESERVATIONS] Error: %v", err)
@@ -244,10 +256,9 @@ func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(reservations)
 }
 
-// 🔥 Admin - 매출 로그 조회 (gymId 체크 제거)
 func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
 	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
-	
+
 	log.Printf("[GET SALES] GymID: %d", gymID)
 
 	sales, err := s.Repo.GetSalesByGym(gymID)
@@ -266,10 +277,9 @@ func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sales)
 }
 
-// 🔥 Admin - 기구 조회 (gymId 체크 제거)
 func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
 	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
-	
+
 	log.Printf("[GET EQUIPMENTS] GymID: %d", gymID)
 
 	equipments, err := s.Repo.GetEquipmentsByGymID(gymID)
@@ -288,7 +298,6 @@ func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(equipments)
 }
 
-// 🔥 Admin - 기구 추가 (Body에서 gym_id 받음)
 func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
 	var eq domain.Equipment
 	if err := json.NewDecoder(r.Body).Decode(&eq); err != nil {
@@ -306,7 +315,6 @@ func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// 🔥 Admin - 기구 수정
 func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
@@ -318,9 +326,9 @@ func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eq.ID = id
-	
+
 	log.Printf("[UPDATE EQUIPMENT] ID: %d, Name: %s", eq.ID, eq.Name)
-	
+
 	if err := s.Repo.UpdateEquipment(&eq); err != nil {
 		s.errorJSON(w, err.Error(), 500)
 		return
@@ -329,7 +337,6 @@ func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// 🔥 Admin - 기구 삭제
 func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
