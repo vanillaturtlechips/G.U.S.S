@@ -112,7 +112,7 @@ export default function AdminPage() {
   const handleSaveEquipment = async () => {
     if (!selectedGymId) return;
     const isEdit = !!editingEquipment;
-    const url = isEdit ? `${API_BASE}/admin/equipments/${editingEquipment.id}` : `${API_BASE}/admin/equipments`;
+    const url = isEdit ? `${API_BASE}/admin/equipments/${editingEquipment.id}` : `${API_BASE}/admin/equipments/`;
     const method = isEdit ? 'PUT' : 'POST';
 
     try {
