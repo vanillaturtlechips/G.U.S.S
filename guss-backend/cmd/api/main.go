@@ -79,11 +79,21 @@ func main() {
 	mux.Handle("/api/reserve/cancel", server.AuthMiddleware(http.HandlerFunc(server.HandleCancelReservation)))
 	mux.Handle("/api/reserve/active", server.AuthMiddleware(http.HandlerFunc(server.HandleGetActiveReservation)))
 
-	// [관리자 API] - 인증 미들웨어 적용
 	mux.Handle("/api/admin/reservations", server.AuthMiddleware(http.HandlerFunc(server.HandleGetReservations)))
 	mux.Handle("/api/admin/sales", server.AuthMiddleware(http.HandlerFunc(server.HandleGetSales)))
 	mux.Handle("/api/admin/equipments", server.AuthMiddleware(http.HandlerFunc(server.HandleGetEquipments)))
-
+	mux.Handle("/api/admin/equipments/", server.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	  switch r.Method {
+	  case http.MethodPost:
+	    server.HandleAddEquipment(w, r)
+	  case http.MethodPut:
+	    server.HandleUpdateEquipment(w, r)
+	  case http.MethodDelete:
+	    server.HandleDeleteEquipment(w, r)
+	  default:
+	    w.WriteHeader(http.StatusMethodNotAllowed)
+	  }
+	})))
 	log.Printf("GUSS API 서버 가동 중 (Port: %s)", *port)
 	if err := http.ListenAndServe(":"+*port, mux); err != nil {
 		log.Fatalf("서버 실행 실패: %v", err)

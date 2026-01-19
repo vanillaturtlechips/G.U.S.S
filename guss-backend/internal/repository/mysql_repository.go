@@ -40,7 +40,6 @@ func (r *mysqlRepo) IncrementUserCount(gymID int64) error {
 	return err
 }
 
-// 🔥 활성 예약 조회
 func (r *mysqlRepo) GetActiveReservationByUser(userNum int64) (*domain.Reservation, error) {
 	res := &domain.Reservation{}
 	query := `SELECT revs_number, fk_user_number, fk_guss_number, revs_time, revs_status 
@@ -66,7 +65,6 @@ func (r *mysqlRepo) GetActiveReservationByUser(userNum int64) (*domain.Reservati
 	return res, nil
 }
 
-// 🔥 예약 취소
 func (r *mysqlRepo) CancelReservation(resID int64, userNum int64) error {
 	query := `UPDATE revs_table 
 	          SET revs_status = 'CANCELLED' 
@@ -85,7 +83,6 @@ func (r *mysqlRepo) CancelReservation(resID int64, userNum int64) error {
 	return nil
 }
 
-// 🔥 Admin - 예약 로그 조회
 func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
 	query := `SELECT r.revs_number, u.user_name, r.revs_time, r.revs_status, r.revs_time as visit_time
 	          FROM revs_table r
@@ -96,7 +93,7 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
-		return nil, err
+		return []domain.Reservation{}, nil
 	}
 	defer rows.Close()
 
@@ -116,10 +113,13 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 		reservations = append(reservations, res)
 	}
 
+	if reservations == nil {
+		return []domain.Reservation{}, nil
+	}
+
 	return reservations, nil
 }
 
-// 🔥 Admin - 매출 로그 조회
 func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 	query := `SELECT sales_number, sales_date, sales_amount, sales_type
 	          FROM sales_table
@@ -129,7 +129,7 @@ func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
-		return nil, err
+		return []domain.Sale{}, nil
 	}
 	defer rows.Close()
 
@@ -148,7 +148,98 @@ func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 		sales = append(sales, sale)
 	}
 
+	if sales == nil {
+		return []domain.Sale{}, nil
+	}
+
 	return sales, nil
+}
+
+// 🔥 기구 CRUD
+func (r *mysqlRepo) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error) {
+	query := `SELECT eq_number, fk_guss_number, eq_name, eq_category, eq_quantity, eq_status, eq_purchase_date
+	          FROM equipments_table
+	          WHERE fk_guss_number = ?
+	          ORDER BY eq_number DESC`
+
+	rows, err := r.db.Query(query, gymID)
+	if err != nil {
+		return []domain.Equipment{}, nil
+	}
+	defer rows.Close()
+
+	var equipments []domain.Equipment
+	for rows.Next() {
+		var eq domain.Equipment
+		var purchaseDate sql.NullTime
+		
+		err := rows.Scan(
+			&eq.ID,
+			&eq.GymID,
+			&eq.Name,
+			&eq.Category,
+			&eq.Quantity,
+			&eq.Status,
+			&purchaseDate,
+		)
+		if err != nil {
+			continue
+		}
+
+		if purchaseDate.Valid {
+			eq.PurchaseDate = purchaseDate.Time.Format("2006-01-02")
+		}
+
+		equipments = append(equipments, eq)
+	}
+
+	if equipments == nil {
+		return []domain.Equipment{}, nil
+	}
+
+	return equipments, nil
+}
+
+func (r *mysqlRepo) AddEquipment(eq *domain.Equipment) error {
+	query := `INSERT INTO equipments_table (fk_guss_number, eq_name, eq_category, eq_quantity, eq_status, eq_purchase_date)
+	          VALUES (?, ?, ?, ?, ?, ?)`
+
+	_, err := r.db.Exec(query, eq.GymID, eq.Name, eq.Category, eq.Quantity, eq.Status, eq.PurchaseDate)
+	return err
+}
+
+func (r *mysqlRepo) UpdateEquipment(eq *domain.Equipment) error {
+	query := `UPDATE equipments_table 
+	          SET eq_name = ?, eq_category = ?, eq_quantity = ?, eq_status = ?, eq_purchase_date = ?
+	          WHERE eq_number = ?`
+
+	result, err := r.db.Exec(query, eq.Name, eq.Category, eq.Quantity, eq.Status, eq.PurchaseDate, eq.ID)
+	if err != nil {
+		return err
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return errors.New("수정할 기구를 찾을 수 없습니다.")
+	}
+
+	return nil
+}
+
+func (r *mysqlRepo) DeleteEquipment(eqID int64) error {
+	query := `DELETE FROM equipments_table WHERE eq_number = ?`
+
+	result, err := r.db.Exec(query, eqID)
+	if err != nil {
+		return err
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return errors.New("삭제할 기구를 찾을 수 없습니다.")
+	}
+
+	return nil
 }
 
 func (r *mysqlRepo) UpdateFCMToken(userID, token string) error {
@@ -205,20 +296,4 @@ func (r *mysqlRepo) GetGymDetail(id int64) (*domain.Gym, error) {
 	                       FROM guss_table WHERE guss_number = ?`, id).
 		Scan(&g.GussNumber, &g.GussName, &g.GussAddress, &g.GussPhone, &g.GussUserCount, &g.GussSize, &g.GussStatus)
 	return g, err
-}
-
-func (r *mysqlRepo) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) {
-	return []domain.Equipment{}, nil
-}
-
-func (r *mysqlRepo) AddEquipment(eq *domain.Equipment) error {
-	return nil
-}
-
-func (r *mysqlRepo) UpdateEquipment(eq *domain.Equipment) error {
-	return nil
-}
-
-func (r *mysqlRepo) DeleteEquipment(id int64) error {
-	return nil
 }

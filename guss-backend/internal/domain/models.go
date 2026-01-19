@@ -29,13 +29,13 @@ type Gym struct {
 
 // Equipment: 기구 관리 (어드민 페이지용 추가)
 type Equipment struct {
-	ID           int64  `json:"id"           db:"equip_id"`
-	GymID        int64  `json:"gym_id"       db:"fk_guss_number"`
-	Name         string `json:"name"         db:"equip_name"`
-	Category     string `json:"category"     db:"equip_category"`
-	Quantity     int    `json:"quantity"     db:"equip_quantity"`
-	Status       string `json:"status"       db:"equip_status"`
-	PurchaseDate string `json:"purchaseDate" db:"purchase_date"`
+	ID            int64  `json:"id" db:"eq_number"`
+	GymID         int64  `json:"gym_id" db:"fk_guss_number"`
+	Name          string `json:"name" db:"eq_name"`
+	Category      string `json:"category" db:"eq_category"`
+	Quantity      int    `json:"quantity" db:"eq_quantity"`
+	Status        string `json:"status" db:"eq_status"`
+	PurchaseDate  string `json:"purchaseDate" db:"eq_purchase_date"`
 }
 
 // Reservation: 예약 정보 (방문 시간 추가)

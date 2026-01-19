@@ -83,7 +83,6 @@ export default function GussPage() {
       setShowReservationModal(false);
       setQrValue(response.data.qr_data);
       setShowQRModal(true);
-      await fetchActiveReservation();
     } catch (error: any) {
       setShowReservationModal(false);
       const errorMessage = error.response?.data?.error || '예약 오류가 발생했습니다.';
@@ -241,7 +240,15 @@ export default function GussPage() {
               <h3 className="text-2xl font-black mb-2 tracking-tighter uppercase text-emerald-400" style={{ fontFamily: 'Orbitron' }}>RESERVE_SUCCESS</h3>
               <p className="text-zinc-400 font-medium leading-relaxed mb-6">예약이 완료되었습니다. <br/> 아래 QR 코드를 센터 입구에서 스캔하세요.</p>
               <div className="bg-white p-4 rounded-xl inline-block mb-8"><QRCodeSVG value={qrValue} size={180} /></div>
-              <button onClick={() => setShowQRModal(false)} className="w-full py-4 bg-zinc-900 border border-emerald-500/30 rounded-xl text-white font-black hover:bg-emerald-500/10 transition-all">CONFIRM</button>
+              <button 
+                onClick={() => {
+                  setShowQRModal(false);
+                  fetchActiveReservation();
+                }} 
+                className="w-full py-4 bg-zinc-900 border border-emerald-500/30 rounded-xl text-white font-black hover:bg-emerald-500/10 transition-all"
+              >
+                CONFIRM
+              </button>
             </div>
           </div>
         </div>
