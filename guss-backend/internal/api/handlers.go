@@ -137,7 +137,12 @@ func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request)
 func (s *Server) HandleGetActiveReservation(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(UserContextKey).(*auth.Claims)
 	
+	log.Printf("[GET ACTIVE] UserNumber: %d, UserID: %s", claims.UserNumber, claims.UserID)
+	
 	reservation, err := s.Repo.GetActiveReservationByUser(claims.UserNumber)
+	
+	log.Printf("[GET ACTIVE] Reservation: %+v, Error: %v", reservation, err)
+	
 	if err != nil || reservation == nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{"reservation": nil})
 		return
@@ -217,19 +222,20 @@ func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
 }
 
-// 🔥 Admin - 예약 로그 조회
+// 🔥 Admin - 예약 로그 조회 (gymId 체크 제거 - 이미 쿼리에서 필터링)
 func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
-	if gymID == 0 {
-		s.errorJSON(w, "gymId는 필수입니다.", 400)
-		return
-	}
-
+	
+	log.Printf("[GET RESERVATIONS] GymID: %d", gymID)
+	
 	reservations, err := s.Repo.GetReservationsByGym(gymID)
 	if err != nil {
+		log.Printf("[GET RESERVATIONS] Error: %v", err)
 		json.NewEncoder(w).Encode([]domain.Reservation{})
 		return
 	}
+
+	log.Printf("[GET RESERVATIONS] Found %d reservations", len(reservations))
 
 	if reservations == nil {
 		reservations = []domain.Reservation{}
@@ -238,19 +244,20 @@ func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(reservations)
 }
 
-// 🔥 Admin - 매출 로그 조회
+// 🔥 Admin - 매출 로그 조회 (gymId 체크 제거)
 func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
 	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
-	if gymID == 0 {
-		s.errorJSON(w, "gymId는 필수입니다.", 400)
-		return
-	}
+	
+	log.Printf("[GET SALES] GymID: %d", gymID)
 
 	sales, err := s.Repo.GetSalesByGym(gymID)
 	if err != nil {
+		log.Printf("[GET SALES] Error: %v", err)
 		json.NewEncoder(w).Encode([]domain.Sale{})
 		return
 	}
+
+	log.Printf("[GET SALES] Found %d sales", len(sales))
 
 	if sales == nil {
 		sales = []domain.Sale{}
@@ -259,19 +266,20 @@ func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(sales)
 }
 
-// 🔥 Admin - 기구 조회
+// 🔥 Admin - 기구 조회 (gymId 체크 제거)
 func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
 	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
-	if gymID == 0 {
-		s.errorJSON(w, "gymId는 필수입니다.", 400)
-		return
-	}
+	
+	log.Printf("[GET EQUIPMENTS] GymID: %d", gymID)
 
 	equipments, err := s.Repo.GetEquipmentsByGymID(gymID)
 	if err != nil {
+		log.Printf("[GET EQUIPMENTS] Error: %v", err)
 		json.NewEncoder(w).Encode([]domain.Equipment{})
 		return
 	}
+
+	log.Printf("[GET EQUIPMENTS] Found %d equipments", len(equipments))
 
 	if equipments == nil {
 		equipments = []domain.Equipment{}
@@ -280,7 +288,7 @@ func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(equipments)
 }
 
-// 🔥 Admin - 기구 추가
+// 🔥 Admin - 기구 추가 (Body에서 gym_id 받음)
 func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
 	var eq domain.Equipment
 	if err := json.NewDecoder(r.Body).Decode(&eq); err != nil {
@@ -288,12 +296,13 @@ func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("[ADD EQUIPMENT] Gym: %d, Name: %s", eq.GymID, eq.Name)
+
 	if err := s.Repo.AddEquipment(&eq); err != nil {
 		s.errorJSON(w, err.Error(), 500)
 		return
 	}
 
-	log.Printf("[ADD EQUIPMENT] Gym: %d, Name: %s", eq.GymID, eq.Name)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
@@ -309,12 +318,14 @@ func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eq.ID = id
+	
+	log.Printf("[UPDATE EQUIPMENT] ID: %d, Name: %s", eq.ID, eq.Name)
+	
 	if err := s.Repo.UpdateEquipment(&eq); err != nil {
 		s.errorJSON(w, err.Error(), 500)
 		return
 	}
 
-	log.Printf("[UPDATE EQUIPMENT] ID: %d, Name: %s", eq.ID, eq.Name)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
@@ -323,11 +334,12 @@ func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
 
+	log.Printf("[DELETE EQUIPMENT] ID: %d", id)
+
 	if err := s.Repo.DeleteEquipment(id); err != nil {
 		s.errorJSON(w, err.Error(), 500)
 		return
 	}
 
-	log.Printf("[DELETE EQUIPMENT] ID: %d", id)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

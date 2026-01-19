@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"guss-backend/internal/domain"
+	"log"
 	"time"
 )
 
@@ -42,16 +43,19 @@ func (r *mysqlRepo) IncrementUserCount(gymID int64) error {
 
 func (r *mysqlRepo) GetActiveReservationByUser(userNum int64) (*domain.Reservation, error) {
 	res := &domain.Reservation{}
+	
 	query := `SELECT revs_number, fk_user_number, fk_guss_number, revs_time, revs_status 
 	          FROM revs_table 
 	          WHERE fk_user_number = ? AND revs_status = 'CONFIRMED' 
 	          ORDER BY revs_time DESC LIMIT 1`
 
+	var revsTime string
+	
 	err := r.db.QueryRow(query, userNum).Scan(
 		&res.RevsNumber,
 		&res.FKUserID,
 		&res.FKGussID,
-		&res.VisitTime,
+		&revsTime,
 		&res.RevsStatus,
 	)
 
@@ -62,22 +66,42 @@ func (r *mysqlRepo) GetActiveReservationByUser(userNum int64) (*domain.Reservati
 		return nil, err
 	}
 
+	parsedTime, _ := time.Parse("2006-01-02 15:04:05", revsTime)
+	res.VisitTime = parsedTime
+	res.RevsTime = parsedTime
+
 	return res, nil
 }
 
 func (r *mysqlRepo) CancelReservation(resID int64, userNum int64) error {
-	query := `UPDATE revs_table 
-	          SET revs_status = 'CANCELLED' 
-	          WHERE revs_number = ? AND fk_user_number = ? AND revs_status = 'CONFIRMED'`
-
-	result, err := r.db.Exec(query, resID, userNum)
+	var gymID int64
+	checkQuery := `SELECT fk_guss_number FROM revs_table 
+	               WHERE revs_number = ? AND fk_user_number = ? AND revs_status = 'CONFIRMED'`
+	
+	err := r.db.QueryRow(checkQuery, resID, userNum).Scan(&gymID)
+	if err == sql.ErrNoRows {
+		return errors.New("취소할 수 있는 예약이 없습니다.")
+	}
 	if err != nil {
 		return err
 	}
 
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		return errors.New("취소할 수 있는 예약이 없습니다.")
+	updateQuery := `UPDATE revs_table 
+	                SET revs_status = 'CANCELLED' 
+	                WHERE revs_number = ? AND fk_user_number = ? AND revs_status = 'CONFIRMED'`
+
+	_, err = r.db.Exec(updateQuery, resID, userNum)
+	if err != nil {
+		return err
+	}
+
+	decrementQuery := `UPDATE guss_table 
+	                   SET guss_user_count = GREATEST(guss_user_count - 1, 0) 
+	                   WHERE guss_number = ?`
+	
+	_, err = r.db.Exec(decrementQuery, gymID)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -93,6 +117,7 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
+		log.Printf("[GetReservationsByGym] Query Error: %v", err)
 		return []domain.Reservation{}, nil
 	}
 	defer rows.Close()
@@ -100,18 +125,27 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 	var reservations []domain.Reservation
 	for rows.Next() {
 		var res domain.Reservation
+		var revsTimeStr, visitTimeStr string
+		
 		err := rows.Scan(
 			&res.RevsNumber,
 			&res.UserName,
-			&res.RevsTime,
+			&revsTimeStr,
 			&res.RevsStatus,
-			&res.VisitTime,
+			&visitTimeStr,
 		)
 		if err != nil {
+			log.Printf("[GetReservationsByGym] Scan Error: %v", err)
 			continue
 		}
+
+		res.RevsTime, _ = time.Parse("2006-01-02 15:04:05", revsTimeStr)
+		res.VisitTime, _ = time.Parse("2006-01-02 15:04:05", visitTimeStr)
+		
 		reservations = append(reservations, res)
 	}
+
+	log.Printf("[GetReservationsByGym] Final count: %d", len(reservations))
 
 	if reservations == nil {
 		return []domain.Reservation{}, nil
@@ -129,6 +163,7 @@ func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
+		log.Printf("[GetSalesByGym] Query Error: %v", err)
 		return []domain.Sale{}, nil
 	}
 	defer rows.Close()
@@ -136,17 +171,25 @@ func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 	var sales []domain.Sale
 	for rows.Next() {
 		var sale domain.Sale
+		var salesDateStr string
+		
 		err := rows.Scan(
 			&sale.SalesNumber,
-			&sale.SalesDate,
+			&salesDateStr,
 			&sale.SalesAmount,
 			&sale.SalesType,
 		)
 		if err != nil {
+			log.Printf("[GetSalesByGym] Scan Error: %v", err)
 			continue
 		}
+
+		sale.SalesDate, _ = time.Parse("2006-01-02 15:04:05", salesDateStr)
+		
 		sales = append(sales, sale)
 	}
+
+	log.Printf("[GetSalesByGym] Final count: %d", len(sales))
 
 	if sales == nil {
 		return []domain.Sale{}, nil
@@ -155,7 +198,6 @@ func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 	return sales, nil
 }
 
-// 🔥 기구 CRUD
 func (r *mysqlRepo) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error) {
 	query := `SELECT eq_number, fk_guss_number, eq_name, eq_category, eq_quantity, eq_status, eq_purchase_date
 	          FROM equipments_table
@@ -164,6 +206,7 @@ func (r *mysqlRepo) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error
 
 	rows, err := r.db.Query(query, gymID)
 	if err != nil {
+		log.Printf("[GetEquipmentsByGymID] Query Error: %v", err)
 		return []domain.Equipment{}, nil
 	}
 	defer rows.Close()
@@ -171,8 +214,8 @@ func (r *mysqlRepo) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error
 	var equipments []domain.Equipment
 	for rows.Next() {
 		var eq domain.Equipment
-		var purchaseDate sql.NullTime
-		
+		var purchaseDateStr sql.NullString // 🔥 NullTime → NullString 변경
+
 		err := rows.Scan(
 			&eq.ID,
 			&eq.GymID,
@@ -180,18 +223,22 @@ func (r *mysqlRepo) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error
 			&eq.Category,
 			&eq.Quantity,
 			&eq.Status,
-			&purchaseDate,
+			&purchaseDateStr, // 🔥 문자열로 받기
 		)
 		if err != nil {
+			log.Printf("[GetEquipmentsByGymID] Scan Error: %v", err)
 			continue
 		}
 
-		if purchaseDate.Valid {
-			eq.PurchaseDate = purchaseDate.Time.Format("2006-01-02")
+		// 🔥 문자열 그대로 할당
+		if purchaseDateStr.Valid {
+			eq.PurchaseDate = purchaseDateStr.String
 		}
 
 		equipments = append(equipments, eq)
 	}
+
+	log.Printf("[GetEquipmentsByGymID] Final count: %d", len(equipments))
 
 	if equipments == nil {
 		return []domain.Equipment{}, nil
