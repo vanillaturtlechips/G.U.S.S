@@ -1,109 +1,28 @@
 package repository
 
 import (
-	"database/sql"
 	"guss-backend/internal/domain"
-	"log"
+	"time"
 )
 
 type MockRepository struct{}
 
-func NewMockRepository() Repository {
-	return &MockRepository{}
-}
+func NewMockRepository() Repository { return &MockRepository{} }
 
-// 1. 유저 관련 Mock
-func (m *MockRepository) CreateUser(u *domain.User) error {
-	log.Printf("[MOCK] User Created: %v", u.UserName)
-	return nil
-}
-
-func (m *MockRepository) GetUserByID(id string) (*domain.User, error) {
-	// 일반 유저 테스트를 위한 Mock 데이터
-	return &domain.User{
-		UserNumber: 1,
-		UserID:     id,
-		UserName:   "Mock일반유저",
-		UserPW:     "$2a$10$Wp6S7Vf4X.0pGzXz9XyYduzI6.R8z8L5v5.m7Gz8z8z8z8z8z8z8z", // '1234'의 해시
-	}, nil
-}
-
-// 2. [추가] 관리자 관련 Mock (오류 해결 지점)
-func (m *MockRepository) GetAdminByID(id string) (*domain.Admin, error) {
-	return &domain.Admin{
-		AdminNumber: 1,
-		AdminID:     id,
-		AdminPW:     "$2a$10$7cQkLrgVQGuNCvYyONufFOwO3EwmBl1H.1lJ1y906WRBaNTH2t1Fe",
-		FKGussID:    sql.NullInt64{Int64: 1, Valid: true},
-	}, nil
-}
-
-// 3. 체육관 관련 Mock
-func (m *MockRepository) GetGyms() ([]domain.Gym, error) {
-	return []domain.Gym{
-		{GussNumber: 1, GussName: "Mock 강남점", GussStatus: "OPEN", GussSize: 50, GussUserCount: 10},
-	}, nil
-}
-
-func (m *MockRepository) GetGymDetail(id int64) (*domain.Gym, error) {
-	return &domain.Gym{
-		GussNumber:    id,
-		GussName:      "Mock 상세 지점",
-		GussSize:      50,
-		GussUserCount: 5,
-	}, nil
-}
-
-// 4. 예약 관련 Mock
-func (m *MockRepository) CreateReservation(userNum, gymNum int64) (string, error) {
-	log.Printf("[MOCK] Reservation Created: User %d -> Gym %d", userNum, gymNum)
-	return "CONFIRMED", nil
-}
-
-func (m *MockRepository) GetReservationsByGym(gymID int64) ([]domain.Reservation, error) {
-	return []domain.Reservation{}, nil
-}
-
-// 5. 기구 관리 Mock
-func (m *MockRepository) GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error) {
-	return []domain.Equipment{
-		{ID: 1, Name: "Mock 트레드밀", Category: "유산소", Quantity: 5, Status: "active"},
-	}, nil
-}
-
-func (m *MockRepository) AddEquipment(eq *domain.Equipment) error {
-	log.Printf("[MOCK] Equipment Added: %s", eq.Name)
-	return nil
-}
-
-func (m *MockRepository) UpdateEquipment(eq *domain.Equipment) error {
-	log.Printf("[MOCK] Equipment Updated: ID %d", eq.ID)
-	return nil
-}
-
-func (m *MockRepository) DeleteEquipment(eqID int64) error {
-	log.Printf("[MOCK] Equipment Deleted: ID %d", eqID)
-	return nil
-}
-
-// 6. 매출 관련 Mock
-func (m *MockRepository) GetSalesByGym(gymID int64) ([]map[string]interface{}, error) {
-	return []map[string]interface{}{
-		{"type": "Membership", "amount": 100000, "date": "2026-01-13"},
-	}, nil
-}
-
-// --- LogRepository Mock ---
-type MockLogRepository struct{}
-
-func NewMockLogRepository() LogRepository {
-	return &MockLogRepository{}
-}
-
-func (m *MockLogRepository) SaveEqLog(gID int64, eID string, stat string) error {
-	return nil
-}
-
-func (m *MockLogRepository) SaveUserLog(uID string, act string) error {
-	return nil
-}
+func (m *MockRepository) CreateUser(u *domain.User) error { return nil }
+func (m *MockRepository) GetUserByID(id string) (*domain.User, error) { return &domain.User{}, nil }
+func (m *MockRepository) UpdateFCMToken(uID, t string) error { return nil }
+func (m *MockRepository) GetFCMToken(uID string) (string, error) { return "", nil }
+func (m *MockRepository) GetAllGyms() ([]domain.Gym, error) { return []domain.Gym{}, nil }
+func (m *MockRepository) GetGymDetail(id int64) (*domain.Gym, error) { return &domain.Gym{}, nil }
+func (m *MockRepository) IncrementUserCount(id int64) error { return nil }
+func (m *MockRepository) CreateReservation(u, g int64, t time.Time) (string, error) { return "SUCCESS", nil }
+func (m *MockRepository) GetReservationsByGym(id int64) ([]domain.Reservation, error) { return []domain.Reservation{}, nil }
+func (m *MockRepository) GetActiveReservationByUser(userNum int64) (*domain.Reservation, error) { return nil, nil }
+func (m *MockRepository) CancelReservation(resID int64, userNum int64) error { return nil }
+func (m *MockRepository) GetAdminByID(id string) (*domain.Admin, error) { return &domain.Admin{}, nil }
+func (m *MockRepository) GetEquipmentsByGymID(id int64) ([]domain.Equipment, error) { return []domain.Equipment{}, nil }
+func (m *MockRepository) AddEquipment(e *domain.Equipment) error { return nil }
+func (m *MockRepository) UpdateEquipment(e *domain.Equipment) error { return nil }
+func (m *MockRepository) DeleteEquipment(id int64) error { return nil }
+func (m *MockRepository) GetSalesByGym(id int64) ([]domain.Sale, error) { return []domain.Sale{}, nil }

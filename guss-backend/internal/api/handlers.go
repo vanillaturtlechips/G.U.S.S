@@ -2,310 +2,344 @@ package api
 
 import (
 	"encoding/json"
-	"guss-backend/internal/algo"
-	"guss-backend/internal/auth" // JWT 및 Bcrypt 인증 패키지
-	"guss-backend/internal/domain"
-	"guss-backend/internal/repository"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/google/uuid"
+
+	"guss-backend/internal/algo"
+	"guss-backend/internal/auth"
+	"guss-backend/internal/domain"
+	"guss-backend/internal/repository"
 )
 
 type contextKey string
-
 const UserContextKey contextKey = "user"
 
 type Server struct {
-	Repo    repository.Repository
-	LogRepo repository.LogRepository
-	Algo    any
+	Repo         repository.Repository
+	LogRepo      repository.LogRepository
+	Algo         any
+	SQSClient    *sqs.Client
+	SQSURL       string
+	DynamoClient *dynamodb.Client
+	DynamoTable  string
 }
 
-// errorJSON: 공통 에러 응답 처리용 헬퍼 함수
 func (s *Server) errorJSON(w http.ResponseWriter, message string, code int) {
-	log.Printf("[ERROR] 코드: %d, 메시지: %s", code, message)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
-// HandleLogin: 유저/관리자 통합 로그인 및 지점별 권한 부여
-func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	var input struct {
-		UserID string `json:"user_id"`
-		UserPW string `json:"user_pw"`
+func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		GymID     int64  `json:"gym_id"`
+		VisitTime string `json:"visit_time"`
 	}
-
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		s.errorJSON(w, "잘못된 요청 형식입니다.", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorJSON(w, "잘못된 요청 형식입니다.", 400)
 		return
 	}
 
-	var userNumber int64
-	var userName string
-	var hashedPassword string
-	var role string = "USER"
-	var gymID int64 = 0 // 관리자의 담당 지점 ID (0은 전체 권한 의미)
+	t, err := time.Parse("2006-01-02 15:04:05", req.VisitTime)
+	if err != nil { t = time.Now() }
+	
+	claims := r.Context().Value(UserContextKey).(*auth.Claims)
 
-	// 1. 먼저 일반 유저 테이블에서 조회
-	user, err := s.Repo.GetUserByID(input.UserID)
-	if err == nil {
-		userNumber = user.UserNumber
-		userName = user.UserName
-		hashedPassword = user.UserPW
-		// 아이디가 admin인 유저는 USER 테이블에 있더라도 ADMIN으로 취급
-		if user.UserID == "admin" {
-			role = "ADMIN"
-		}
-	} else {
-		// 2. 유저가 없으면 관리자 전용 테이블(admin_table) 조회
-		admin, err := s.Repo.GetAdminByID(input.UserID)
-		if err != nil {
-			s.errorJSON(w, "아이디 또는 비밀번호가 일치하지 않습니다.", http.StatusUnauthorized)
+	status, err := s.Repo.CreateReservation(claims.UserNumber, req.GymID, t)
+	if err != nil {
+		if status == "DUPLICATE" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"status": "DUPLICATE", "error": err.Error()})
 			return
 		}
-		userNumber = admin.AdminNumber
-		userName = "관리자(" + admin.AdminID + ")"
-		hashedPassword = admin.AdminPW
-		role = "ADMIN"
-
-		// [중요] sql.NullInt64 안전하게 처리 (super_admin은 NULL이므로 Valid가 false)
-		if admin.FKGussID.Valid {
-			gymID = admin.FKGussID.Int64 // 지점 관리자
-		} else {
-			gymID = 0 // 최고 관리자 (NULL)
-		}
-	}
-
-	// 3. 비밀번호 검증 (Bcrypt)
-	if !auth.CheckPasswordHash(input.UserPW, hashedPassword) {
-		s.errorJSON(w, "아이디 또는 비밀번호가 일치하지 않습니다.", http.StatusUnauthorized)
+		s.errorJSON(w, err.Error(), 400)
 		return
 	}
 
-	// 4. 최고 관리자 ID 별도 판단 (로직 보강 가능)
-	if input.UserID == "super_admin" {
-		role = "SUPER_ADMIN"
+	resID := uuid.New().String()
+	eventAt := time.Now().Format(time.RFC3339)
+
+	log.Printf("[RESERVE] User: %s, Gym: %d, Time: %s", claims.UserID, req.GymID, t.Format("15:04:05"))
+
+	if s.SQSClient != nil {
+		fcmToken, _ := s.Repo.GetFCMToken(claims.UserID)
+		payload, _ := json.Marshal(map[string]interface{}{
+			"res_id": resID, "user_id": claims.UserID, "fcm_token": fcmToken, "gym_id": req.GymID, "event_at": eventAt,
+		})
+		s.SQSClient.SendMessage(r.Context(), &sqs.SendMessageInput{
+			QueueUrl: aws.String(s.SQSURL), MessageBody: aws.String(string(payload)),
+		})
 	}
 
-	// 5. 토큰 생성 및 응답
-	token, err := auth.GenerateToken(userNumber, input.UserID, role)
-	if err != nil {
-		s.errorJSON(w, "토큰 생성 실패", http.StatusInternalServerError)
-		return
-	}
+	qrURL := fmt.Sprintf("https://13.124.132.80/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s",
+		resID, claims.UserID, req.GymID, eventAt)
 
-	log.Printf("[LOGIN] %s 접속 (Role: %s, GymID: %d)", input.UserID, role, gymID)
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "success",
-		"token":     token,
-		"user_name": userName,
-		"user_role": role,
-		"gym_id":    gymID, // 프론트엔드에서 지점 필터링에 사용
-	})
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "qr_data": qrURL})
 }
 
-// HandleRegister: 회원가입 (Bcrypt 적용)
-func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var u domain.User
+func (s *Server) HandleCheckIn(w http.ResponseWriter, r *http.Request) {
+	resID := r.URL.Query().Get("res_id")
+	userID := r.URL.Query().Get("user_id")
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gym_id"), 10, 64)
+	eventAt := r.URL.Query().Get("event_at")
 
-	if err := json.NewDecoder(r.Body).Decode(&u); err != nil {
-		s.errorJSON(w, "데이터 형식 오류", 400)
+	if err := s.Repo.IncrementUserCount(gymID); err != nil {
+		s.errorJSON(w, "인원 갱신 실패", 500)
 		return
 	}
 
-	hashedPW, err := auth.HashPassword(u.UserPW)
-	if err != nil {
-		s.errorJSON(w, "비밀번호 처리 중 오류 발생", 500)
-		return
-	}
-	u.UserPW = hashedPW
+	log.Printf("[CHECK-IN SUCCESS] ResID: %s, User: %s, Gym: %d", resID, userID, gymID)
 
-	if err := s.Repo.CreateUser(&u); err != nil {
-		s.errorJSON(w, "회원가입 실패 (아이디 중복 등)", 500)
-		return
-	}
-
-	log.Printf("[SUCCESS] 신규 유저 가입: %s (No: %d)", u.UserName, u.UserNumber)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":      "success",
-		"user_number": u.UserNumber,
+	s.DynamoClient.UpdateItem(r.Context(), &dynamodb.UpdateItemInput{
+		TableName: aws.String(s.DynamoTable),
+		Key: map[string]types.AttributeValue{
+			"user_id":  &types.AttributeValueMemberS{Value: userID},
+			"event_at": &types.AttributeValueMemberS{Value: eventAt},
+		},
+		UpdateExpression: aws.String("SET #s = :status"),
+		ExpressionAttributeNames: map[string]string{"#s": "status"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":status": &types.AttributeValueMemberS{Value: "ATTENDED"}},
 	})
+
+	w.Write([]byte("<html><body><h1>Check-in Success! 반갑습니다.</h1></body></html>"))
 }
 
-// HandleReserve: 중복 예약 방지 로직 적용
-func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
+func (s *Server) HandleCancelReservation(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(UserContextKey).(*auth.Claims)
+	
 	var req struct {
-		GymID        int64 `json:"gym_id"`
-		FkGussNumber int64 `json:"fk_guss_number"`
+		ReservationID int64 `json:"reservation_id"`
 	}
-
-	json.NewDecoder(r.Body).Decode(&req)
-
-	if req.GymID == 0 && req.FkGussNumber > 0 {
-		req.GymID = req.FkGussNumber
-	}
-
-	claims, ok := r.Context().Value(UserContextKey).(*auth.Claims)
-	if !ok {
-		s.errorJSON(w, "인증 정보가 없습니다.", http.StatusUnauthorized)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorJSON(w, "잘못된 요청 형식입니다.", 400)
 		return
 	}
 
-	_, err := s.Repo.CreateReservation(claims.UserNumber, req.GymID)
-	if err != nil {
-		s.errorJSON(w, err.Error(), http.StatusBadRequest)
+	if err := s.Repo.CancelReservation(req.ReservationID, claims.UserNumber); err != nil {
+		s.errorJSON(w, err.Error(), 400)
 		return
 	}
 
-	log.Printf("[SUCCESS] 유저 %d번 -> 체육관 %d번 예약 완료", claims.UserNumber, req.GymID)
+	log.Printf("[CANCEL] User: %s, ReservationID: %d", claims.UserID, req.ReservationID)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
-// HandleDashboard: 지점별 실시간 통계
-func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	stats := map[string]interface{}{
-		"status":      "Running",
-		"active_now":  12,
-		"server_time": time.Now().Format("2006-01-02 15:04:05"),
-	}
-	json.NewEncoder(w).Encode(stats)
-}
-
-// HandleGetSales: 매출 데이터 조회 (향후 DynamoDB 마이그레이션 대상)
-func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	logs := []map[string]interface{}{
-		{"type": "일일권", "amount": 10000, "date": time.Now().Format("2006-01-02")},
-	}
-	json.NewEncoder(w).Encode(logs)
-}
-
-// --- 공통 조회 핸들러들 ---
-
-func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	gyms, err := s.Repo.GetGyms()
-	if err != nil {
-		s.errorJSON(w, "조회 실패", 500)
+func (s *Server) HandleGetActiveReservation(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(UserContextKey).(*auth.Claims)
+	
+	log.Printf("[GET ACTIVE] UserNumber: %d, UserID: %s", claims.UserNumber, claims.UserID)
+	
+	reservation, err := s.Repo.GetActiveReservationByUser(claims.UserNumber)
+	
+	log.Printf("[GET ACTIVE] Reservation: %+v, Error: %v", reservation, err)
+	
+	if err != nil || reservation == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"reservation": nil})
 		return
 	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"reservation": reservation})
+}
+
+func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		UserID   string `json:"user_id"`
+		UserPW   string `json:"user_pw"`
+		FCMToken string `json:"fcm_token"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("[LOGIN] JSON decode error: %v", err)
+		s.errorJSON(w, "잘못된 요청 형식", 400)
+		return
+	}
+
+	log.Printf("[LOGIN] Attempting login for user: %s", input.UserID)
+
+	user, err := s.Repo.GetUserByID(input.UserID)
+	if err != nil {
+		log.Printf("[LOGIN] GetUserByID error: %v", err)
+		s.errorJSON(w, "인증 실패", 401)
+		return
+	}
+
+	log.Printf("[LOGIN] User found: %s, checking password", user.UserID)
+
+	if !auth.CheckPasswordHash(input.UserPW, user.UserPW) {
+		log.Printf("[LOGIN] Password mismatch for user: %s", input.UserID)
+		s.errorJSON(w, "인증 실패", 401)
+		return
+	}
+
+	log.Printf("[LOGIN] Login successful for user: %s", input.UserID)
+
+	if input.FCMToken != "" {
+		s.Repo.UpdateFCMToken(input.UserID, input.FCMToken)
+	}
+
+	token, _ := auth.GenerateToken(user.UserNumber, user.UserID, "USER")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"token": token,
+		"user_name": user.UserName,
+		"role": "USER",
+	})
+}
+
+func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
+	var u domain.User
+	json.NewDecoder(r.Body).Decode(&u)
+	h, _ := auth.HashPassword(u.UserPW)
+	u.UserPW = h
+	s.Repo.CreateUser(&u)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (s *Server) HandleGetGyms(w http.ResponseWriter, r *http.Request) {
+	gyms, _ := s.Repo.GetAllGyms()
 	json.NewEncoder(w).Encode(gyms)
 }
 
 func (s *Server) HandleGetGymDetail(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	idStr := parts[len(parts)-1]
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+	gym, _ := s.Repo.GetGymDetail(id)
+	calc := s.Algo.(*algo.RealTimeCalculator)
+	json.NewEncoder(w).Encode(map[string]interface{}{"gym": gym, "congestion": calc.Calculate(gym.GussUserCount, gym.GussSize)})
+}
 
-	gym, err := s.Repo.GetGymDetail(id)
+func (s *Server) HandleDashboard(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(map[string]string{"status": "running"})
+}
+
+// 🔥 Admin - 예약 로그 조회 (gymId 체크 제거 - 이미 쿼리에서 필터링)
+func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
+	
+	log.Printf("[GET RESERVATIONS] GymID: %d", gymID)
+	
+	reservations, err := s.Repo.GetReservationsByGym(gymID)
 	if err != nil {
-		s.errorJSON(w, "체육관 정보를 찾을 수 없음", 404)
+		log.Printf("[GET RESERVATIONS] Error: %v", err)
+		json.NewEncoder(w).Encode([]domain.Reservation{})
 		return
 	}
 
-	calculator := s.Algo.(*algo.RealTimeCalculator)
-	utilization := calculator.Calculate(gym.GussUserCount, gym.GussSize)
+	log.Printf("[GET RESERVATIONS] Found %d reservations", len(reservations))
 
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"gym":        gym,
-		"congestion": utilization,
-	})
+	if reservations == nil {
+		reservations = []domain.Reservation{}
+	}
+
+	json.NewEncoder(w).Encode(reservations)
 }
 
+// 🔥 Admin - 매출 로그 조회 (gymId 체크 제거)
+func (s *Server) HandleGetSales(w http.ResponseWriter, r *http.Request) {
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
+	
+	log.Printf("[GET SALES] GymID: %d", gymID)
+
+	sales, err := s.Repo.GetSalesByGym(gymID)
+	if err != nil {
+		log.Printf("[GET SALES] Error: %v", err)
+		json.NewEncoder(w).Encode([]domain.Sale{})
+		return
+	}
+
+	log.Printf("[GET SALES] Found %d sales", len(sales))
+
+	if sales == nil {
+		sales = []domain.Sale{}
+	}
+
+	json.NewEncoder(w).Encode(sales)
+}
+
+// 🔥 Admin - 기구 조회 (gymId 체크 제거)
 func (s *Server) HandleGetEquipments(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	idStr := r.URL.Query().Get("gymId")
-	id, _ := strconv.ParseInt(idStr, 10, 64)
+	gymID, _ := strconv.ParseInt(r.URL.Query().Get("gymId"), 10, 64)
+	
+	log.Printf("[GET EQUIPMENTS] GymID: %d", gymID)
 
-	list, err := s.Repo.GetEquipmentsByGymID(id)
+	equipments, err := s.Repo.GetEquipmentsByGymID(gymID)
 	if err != nil {
-		s.errorJSON(w, "조회 실패", 500)
+		log.Printf("[GET EQUIPMENTS] Error: %v", err)
+		json.NewEncoder(w).Encode([]domain.Equipment{})
 		return
 	}
-	json.NewEncoder(w).Encode(list)
+
+	log.Printf("[GET EQUIPMENTS] Found %d equipments", len(equipments))
+
+	if equipments == nil {
+		equipments = []domain.Equipment{}
+	}
+
+	json.NewEncoder(w).Encode(equipments)
 }
 
+// 🔥 Admin - 기구 추가 (Body에서 gym_id 받음)
 func (s *Server) HandleAddEquipment(w http.ResponseWriter, r *http.Request) {
 	var eq domain.Equipment
-	json.NewDecoder(r.Body).Decode(&eq)
-	if err := s.Repo.AddEquipment(&eq); err != nil {
-		s.errorJSON(w, "등록 실패", 500)
-		return
-	}
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-}
-
-func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	var eq domain.Equipment
-
 	if err := json.NewDecoder(r.Body).Decode(&eq); err != nil {
-		s.errorJSON(w, "데이터 형식 오류", 400)
+		s.errorJSON(w, "잘못된 요청 형식입니다.", 400)
 		return
 	}
 
-	if eq.ID <= 0 {
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) > 0 {
-			id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
-			eq.ID = id
-		}
-	}
+	log.Printf("[ADD EQUIPMENT] Gym: %d, Name: %s", eq.GymID, eq.Name)
 
-	if eq.ID <= 0 {
-		s.errorJSON(w, "수정할 기구 ID를 찾을 수 없습니다.", 400)
+	if err := s.Repo.AddEquipment(&eq); err != nil {
+		s.errorJSON(w, err.Error(), 500)
 		return
 	}
 
-	if err := s.Repo.UpdateEquipment(&eq); err != nil {
-		s.errorJSON(w, "DB 수정 실패", 500)
-		return
-	}
-
-	log.Printf("[SUCCESS] 기구 %d번(%s) 수정 완료", eq.ID, eq.Name)
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
+// 🔥 Admin - 기구 수정
+func (s *Server) HandleUpdateEquipment(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+
+	var eq domain.Equipment
+	if err := json.NewDecoder(r.Body).Decode(&eq); err != nil {
+		s.errorJSON(w, "잘못된 요청 형식입니다.", 400)
+		return
+	}
+
+	eq.ID = id
+	
+	log.Printf("[UPDATE EQUIPMENT] ID: %d, Name: %s", eq.ID, eq.Name)
+	
+	if err := s.Repo.UpdateEquipment(&eq); err != nil {
+		s.errorJSON(w, err.Error(), 500)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// 🔥 Admin - 기구 삭제
 func (s *Server) HandleDeleteEquipment(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	id, _ := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+
+	log.Printf("[DELETE EQUIPMENT] ID: %d", id)
+
 	if err := s.Repo.DeleteEquipment(id); err != nil {
-		s.errorJSON(w, "삭제 실패", 500)
+		s.errorJSON(w, err.Error(), 500)
 		return
 	}
+
 	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
-}
-
-func (s *Server) HandleGetReservations(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	idStr := r.URL.Query().Get("gym_id")
-	if idStr == "" {
-		idStr = r.URL.Query().Get("gymId")
-	}
-	id, _ := strconv.ParseInt(idStr, 10, 64)
-
-	if id <= 0 {
-		s.errorJSON(w, "체육관 ID가 유효하지 않습니다.", http.StatusBadRequest)
-		return
-	}
-
-	list, err := s.Repo.GetReservationsByGym(id)
-	if err != nil {
-		s.errorJSON(w, "예약 목록 조회 실패", http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(list)
 }
