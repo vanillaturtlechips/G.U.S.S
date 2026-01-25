@@ -94,8 +94,8 @@ func (s *Server) HandleReserve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	qrURL := fmt.Sprintf("https://43.203.212.179/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s",
-		resID, claims.UserID, req.GymID, eventAt)
+	qrURL := fmt.Sprintf("http://supermammoth.shop/api/checkin?res_id=%s&user_id=%s&gym_id=%d&event_at=%s",
+	resID, claims.UserID, req.GymID, eventAt)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "success", "qr_data": qrURL})
 }

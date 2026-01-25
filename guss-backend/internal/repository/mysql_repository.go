@@ -43,20 +43,22 @@ func (r *mysqlRepo) IncrementUserCount(gymID int64) error {
 
 func (r *mysqlRepo) GetActiveReservationByUser(userNum int64) (*domain.Reservation, error) {
 	res := &domain.Reservation{}
-	
-	query := `SELECT revs_number, fk_user_number, fk_guss_number, revs_time, revs_status 
-	          FROM revs_table 
-	          WHERE fk_user_number = ? AND revs_status = 'CONFIRMED' 
+
+	query := `SELECT revs_number, fk_user_number, fk_guss_number, revs_time, revs_status, revs_time
+	          FROM revs_table
+	          WHERE fk_user_number = ? AND revs_status = 'CONFIRMED'
 	          ORDER BY revs_time DESC LIMIT 1`
 
 	var revsTime string
-	
+	var visitTime string
+
 	err := r.db.QueryRow(query, userNum).Scan(
 		&res.RevsNumber,
 		&res.FKUserID,
 		&res.FKGussID,
 		&revsTime,
 		&res.RevsStatus,
+		&visitTime,
 	)
 
 	if err == sql.ErrNoRows {
@@ -66,9 +68,15 @@ func (r *mysqlRepo) GetActiveReservationByUser(userNum int64) (*domain.Reservati
 		return nil, err
 	}
 
-	parsedTime, _ := time.Parse("2006-01-02 15:04:05", revsTime)
-	res.VisitTime = parsedTime
-	res.RevsTime = parsedTime
+	parsedRevsTime, _ := time.Parse(time.RFC3339, revsTime)
+	parsedVisitTime, _ := time.Parse(time.RFC3339, visitTime)
+
+	res.RevsTime = parsedRevsTime
+	res.VisitTime = parsedVisitTime
+
+	log.Printf("[DEBUG] revsTime string: %s", revsTime)
+log.Printf("[DEBUG] visitTime string: %s", visitTime)
+log.Printf("[DEBUG] parsed - RevsTime: %v, VisitTime: %v", res.RevsTime, res.VisitTime)
 
 	return res, nil
 }
@@ -139,9 +147,9 @@ func (r *mysqlRepo) GetReservationsByGym(gymID int64) ([]domain.Reservation, err
 			continue
 		}
 
-		res.RevsTime, _ = time.Parse("2006-01-02 15:04:05", revsTimeStr)
-		res.VisitTime, _ = time.Parse("2006-01-02 15:04:05", visitTimeStr)
-		
+		res.RevsTime, _ = time.Parse(time.RFC3339, revsTimeStr)
+		res.VisitTime, _ = time.Parse(time.RFC3339, visitTimeStr)
+
 		reservations = append(reservations, res)
 	}
 
@@ -184,8 +192,7 @@ func (r *mysqlRepo) GetSalesByGym(gymID int64) ([]domain.Sale, error) {
 			continue
 		}
 
-		sale.SalesDate, _ = time.Parse("2006-01-02 15:04:05", salesDateStr)
-		
+		sale.SalesDate, _ = time.Parse(time.RFC3339, salesDateStr)
 		sales = append(sales, sale)
 	}
 
