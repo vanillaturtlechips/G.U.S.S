@@ -1,30 +1,33 @@
 package repository
 
-import "guss-backend/internal/domain"
+import (
+	"guss-backend/internal/domain"
+	"time"
+)
 
 type Repository interface {
-	// User 관련
 	CreateUser(u *domain.User) error
 	GetUserByID(id string) (*domain.User, error)
+	UpdateFCMToken(userID string, token string) error
+	GetFCMToken(userID string) (string, error)
 
-	// Gym 관련 (GetGyms로 이름 변경하여 핸들러와 통일)
-	GetGyms() ([]domain.Gym, error)
+	GetAllGyms() ([]domain.Gym, error)
 	GetGymDetail(id int64) (*domain.Gym, error)
+	IncrementUserCount(gymID int64) error
 
-	// Reservation 관련
-	CreateReservation(userNum, gymNum int64) (string, error)
+	CreateReservation(userNum, gymNum int64, visitTime time.Time) (string, error)
 	GetReservationsByGym(gymID int64) ([]domain.Reservation, error)
+	GetActiveReservationByUser(userNum int64) (*domain.Reservation, error)
+	CancelReservation(resID int64, userNum int64) error
 
 	GetAdminByID(id string) (*domain.Admin, error)
 
-	// Equipment 관련 (메서드 명칭 통일)
 	GetEquipmentsByGymID(gymID int64) ([]domain.Equipment, error)
-	AddEquipment(eq *domain.Equipment) error // domain 객체를 받도록 설정
+	AddEquipment(eq *domain.Equipment) error
 	UpdateEquipment(eq *domain.Equipment) error
 	DeleteEquipment(eqID int64) error
 
-	// 매출 관련
-	GetSalesByGym(gymID int64) ([]map[string]interface{}, error)
+	GetSalesByGym(gymID int64) ([]domain.Sale, error)
 }
 
 type LogRepository interface {

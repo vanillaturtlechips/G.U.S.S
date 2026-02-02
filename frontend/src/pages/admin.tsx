@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Package, Calendar, DollarSign, Plus, Edit, Trash2, 
-  Shield, Activity, TrendingUp, Search, MapPin
+  Shield, Activity, TrendingUp, Search, User, Clock
 } from 'lucide-react';
 
-/* --- 인터페이스 정의 --- */
 interface Equipment {
   id: number;
   gym_id: number;
@@ -24,16 +23,33 @@ interface Gym {
   guss_user_count?: number;
 }
 
+interface Reservation {
+  revs_number: number;
+  user_name: string;
+  visit_time: string;
+  revs_status: string;
+  revs_time: string;
+}
+
+interface Sale {
+  sales_number: number;
+  sales_date: string;
+  sales_amount: number;
+  sales_type: string;
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'equipment' | 'reservation' | 'revenue'>('equipment');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null); // 수정용 상태
+  const [editingEquipment, setEditingEquipment] = useState<Equipment | null>(null);
   const [newEquipment, setNewEquipment] = useState({ name: '', category: '', quantity: '' });
   
   const [gyms, setGyms] = useState<Gym[]>([]); 
   const [selectedGymId, setSelectedGymId] = useState<number | null>(null); 
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
+  const [reservationList, setReservationList] = useState<Reservation[]>([]);
+  const [salesList, setSalesList] = useState<Sale[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const API_BASE = "/api"; 
@@ -59,21 +75,32 @@ export default function AdminPage() {
     setIsLoading(true);
     try {
       if (activeTab === 'equipment') {
-        const res = await fetch(`${API_BASE}/equipments?gymId=${selectedGymId}`, {
+        const res = await fetch(`${API_BASE}/admin/equipments?gymId=${selectedGymId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
         setEquipmentList(data || []);
+      } else if (activeTab === 'reservation') {
+        const res = await fetch(`${API_BASE}/admin/reservations?gymId=${selectedGymId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setReservationList(data || []);
+      } else if (activeTab === 'revenue') {
+        const res = await fetch(`${API_BASE}/admin/sales?gymId=${selectedGymId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setSalesList(data || []);
       }
     } catch (err) { console.error("데이터 조회 실패", err); }
     finally { setIsLoading(false); }
   };
 
-  // [기능 추가] 기구 삭제
   const handleDeleteEquipment = async (id: number) => {
     if (!window.confirm("이 기구를 삭제하시겠습니까?")) return;
     try {
-      const res = await fetch(`${API_BASE}/equipments/${id}`, {
+      const res = await fetch(`${API_BASE}/admin/equipments/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -82,13 +109,10 @@ export default function AdminPage() {
     } catch (err) { alert("삭제 통신 오류"); }
   };
 
-  // [기능 추가] 기구 등록 및 수정 통합 핸들러
   const handleSaveEquipment = async () => {
     if (!selectedGymId) return;
-    
-    // 수정이면 PUT, 등록이면 POST
     const isEdit = !!editingEquipment;
-    const url = isEdit ? `${API_BASE}/equipments/${editingEquipment.id}` : `${API_BASE}/equipments`;
+    const url = isEdit ? `${API_BASE}/admin/equipments/${editingEquipment.id}` : `${API_BASE}/admin/equipments`;
     const method = isEdit ? 'PUT' : 'POST';
 
     try {
@@ -131,7 +155,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-black text-white flex font-sans overflow-hidden">
-      {/* 배경/사이드바 로직 생략 (기존과 동일) */}
       <div className="fixed inset-0 opacity-20 pointer-events-none z-0">
         <div className="absolute inset-0" style={{
           backgroundImage: `linear-gradient(to right, #10b981 1px, transparent 1px), linear-gradient(to bottom, #10b981 1px, transparent 1px)`,
@@ -227,6 +250,26 @@ export default function AdminPage() {
                   ))
                 )}
               </div>
+            ) : activeTab === 'reservation' ? (
+              <div className="space-y-4">
+                {reservationList.length === 0 ? (
+                  <div className="py-20 text-center text-zinc-700 border-2 border-dashed border-zinc-900 rounded-3xl font-bold">예약 내역이 없습니다.</div>
+                ) : (
+                  reservationList.map(item => (
+                    <ReservationItem key={item.revs_number} item={item} />
+                  ))
+                )}
+              </div>
+            ) : activeTab === 'revenue' ? (
+              <div className="space-y-4">
+                {salesList.length === 0 ? (
+                  <div className="py-20 text-center text-zinc-700 border-2 border-dashed border-zinc-900 rounded-3xl font-bold">매출 데이터가 없습니다.</div>
+                ) : (
+                  salesList.map(item => (
+                    <SaleItem key={item.sales_number} item={item} />
+                  ))
+                )}
+              </div>
             ) : null}
           </div>
         </div>
@@ -244,8 +287,6 @@ export default function AdminPage() {
     </div>
   );
 }
-
-/* --- 하단 컴포넌트에 이벤트 연결 --- */
 
 const EquipmentItem = ({ item, onEdit, onDelete }: { item: Equipment, onEdit: any, onDelete: any }) => (
   <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-2xl p-6 flex items-center justify-between hover:border-emerald-500/40 transition-all group">
@@ -266,7 +307,6 @@ const EquipmentItem = ({ item, onEdit, onDelete }: { item: Equipment, onEdit: an
       </div>
     </div>
     <div className="flex gap-2">
-      {/* 이제 onClick 이벤트가 연결되었습니다 */}
       <button 
         onClick={onEdit}
         className="p-3 bg-zinc-800 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl transition-all text-emerald-400"
@@ -283,7 +323,54 @@ const EquipmentItem = ({ item, onEdit, onDelete }: { item: Equipment, onEdit: an
   </div>
 );
 
-// AddModal에도 타이틀 분기 처리 추가
+const ReservationItem = ({ item }: { item: Reservation }) => (
+  <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-2xl p-6 flex items-center justify-between hover:border-emerald-500/40 transition-all group">
+    <div className="flex items-center gap-5">
+      <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center text-black shadow-lg shadow-emerald-500/20">
+        <User size={28} />
+      </div>
+      <div>
+        <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">{item.user_name}</h3>
+        <div className="flex items-center gap-3 mt-1.5">
+          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded border border-emerald-500/20 uppercase tracking-tighter flex items-center gap-1">
+            <Clock size={10} /> {new Date(item.visit_time).toLocaleString('ko-KR')}
+          </span>
+          <span className={`text-xs font-black flex items-center gap-1 ${item.revs_status === 'CONFIRMED' ? 'text-lime-500' : 'text-zinc-500'}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${item.revs_status === 'CONFIRMED' ? 'bg-lime-500 animate-pulse' : 'bg-zinc-500'}`} /> 
+            {item.revs_status === 'CONFIRMED' ? '예약 확정' : '취소됨'}
+          </span>
+        </div>
+      </div>
+    </div>
+    <div className="text-right">
+      <p className="text-xs text-zinc-500 font-bold">예약 시간</p>
+      <p className="text-sm text-zinc-400 font-medium">{new Date(item.revs_time).toLocaleString('ko-KR')}</p>
+    </div>
+  </div>
+);
+
+const SaleItem = ({ item }: { item: Sale }) => (
+  <div className="bg-zinc-900/50 border border-emerald-500/20 rounded-2xl p-6 flex items-center justify-between hover:border-emerald-500/40 transition-all group">
+    <div className="flex items-center gap-5">
+      <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-lime-500 rounded-xl flex items-center justify-center text-black shadow-lg shadow-emerald-500/20">
+        <DollarSign size={28} />
+      </div>
+      <div>
+        <h3 className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">{item.sales_type}</h3>
+        <div className="flex items-center gap-3 mt-1.5">
+          <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded border border-emerald-500/20 uppercase tracking-tighter">
+            {new Date(item.sales_date).toLocaleDateString('ko-KR')}
+          </span>
+          <span className="text-zinc-500 text-xs font-bold">{item.sales_amount.toLocaleString()}원</span>
+        </div>
+      </div>
+    </div>
+    <div className="text-right">
+      <p className="text-3xl font-black text-emerald-400">{item.sales_amount.toLocaleString()}<span className="text-lg text-zinc-500">원</span></p>
+    </div>
+  </div>
+);
+
 const AddModal = ({ onClose, onConfirm, data, setData, isEdit }: any) => (
   <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
     <div className="bg-zinc-950 border-2 border-emerald-500/30 rounded-3xl p-8 max-w-md w-full shadow-[0_0_50px_rgba(16,185,129,0.2)]">
@@ -308,7 +395,6 @@ const AddModal = ({ onClose, onConfirm, data, setData, isEdit }: any) => (
   </div>
 );
 
-// (StatCard, MenuButton 등은 기존과 동일)
 const MenuButton = ({ active, onClick, icon, label }: any) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-5 py-4 rounded-xl font-bold transition-all ${active ? 'bg-gradient-to-r from-emerald-500 to-lime-500 text-black shadow-lg shadow-emerald-500/50' : 'bg-zinc-900 text-emerald-400 hover:bg-zinc-800 border border-emerald-500/20'}`}>
     {icon} <span>{label}</span>
